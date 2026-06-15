@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>opensourceS2DEMO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-dot"></span>
+        <span class="logo-text">opensourceS2DEMO</span>
+      </div>
+      <div class="status-bar">
+        <span class="status-indicator" id="statusIndicator"></span>
+        <span class="status-text" id="statusText">Ready</span>
+      </div>
+      <div class="timer" id="timerDisplay">00:00:00</div>
+    </header>
+
+    <!-- Main layout -->
+    <main class="main">
+
+      <!-- Left: Controls -->
+      <aside class="controls-panel">
+
+        <section class="panel-section">
+          <h2 class="section-label">Capture Source</h2>
+          <div class="source-options source-options-4">
+            <label class="source-option" id="sourceScreen">
+              <input type="radio" name="source" value="screen" checked />
+              <div class="option-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              </div>
+              <span>Screen</span>
+            </label>
+            <label class="source-option" id="sourceWindow">
+              <input type="radio" name="source" value="window" />
+              <div class="option-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              </div>
+              <span>Window</span>
+            </label>
+            <label class="source-option" id="sourceTab">
+              <input type="radio" name="source" value="tab" />
+              <div class="option-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h18M3 8v11a2 2 0 002 2h14a2 2 0 002-2V8M3 8l2-4h14l2 4"/></svg>
+              </div>
+              <span>Tab</span>
+            </label>
+            <label class="source-option" id="sourceCapture">
+              <input type="radio" name="source" value="capturecard" />
+              <div class="option-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10l4 2-4 2z"/></svg>
+              </div>
+              <span>Capture card</span>
+            </label>
+          </div>
+          <div class="capture-card-row hidden" id="captureCardRow">
+            <span class="position-label">HDMI / capture device</span>
+            <select id="captureCardSelect" class="mic-select">
+              <option value="">Select capture card…</option>
+            </select>
+            <div class="toggle-row" style="margin-top:8px">
+              <label class="toggle-label">Capture card audio</label>
+              <label class="toggle">
+                <input type="checkbox" id="captureCardAudio" checked />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+            <p class="caption-note">Use mic + webcam PiP to commentate over a live gaming feed.</p>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2 class="section-label">Audio</h2>
+          <div class="toggle-row">
+            <label class="toggle-label">System Audio</label>
+            <label class="toggle">
+              <input type="checkbox" id="systemAudio" checked />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <label class="toggle-label">Microphone</label>
+            <label class="toggle">
+              <input type="checkbox" id="micAudio" checked />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="mic-select-row" id="micSelectRow">
+            <select id="micSelect" class="mic-select">
+              <option value="">Default Microphone</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2 class="section-label">Webcam Overlay</h2>
+          <div class="toggle-row">
+            <label class="toggle-label">Enable Webcam</label>
+            <label class="toggle">
+              <input type="checkbox" id="webcamToggle" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="webcam-options" id="webcamOptions">
+            <div class="cam-select-row">
+              <select id="camSelect" class="mic-select">
+                <option value="">Default Camera</option>
+              </select>
+            </div>
+            <div class="position-grid">
+              <span class="position-label">Position</span>
+              <div class="position-buttons">
+                <button class="pos-btn active" data-pos="bottom-right" title="Bottom Right">↘</button>
+                <button class="pos-btn" data-pos="bottom-left" title="Bottom Left">↙</button>
+                <button class="pos-btn" data-pos="top-right" title="Top Right">↗</button>
+                <button class="pos-btn" data-pos="top-left" title="Top Left">↖</button>
+              </div>
+            </div>
+            <div class="size-row">
+              <span class="position-label">Size</span>
+              <input type="range" id="camSize" min="100" max="300" value="160" class="size-slider" />
+              <span class="size-val" id="camSizeVal">160px</span>
+            </div>
+            <div class="bg-section">
+              <span class="position-label">PiP background (this session only)</span>
+              <div class="bg-mode-options">
+                <label class="quality-opt"><input type="radio" name="bgMode" value="none" checked /> None</label>
+                <label class="quality-opt"><input type="radio" name="bgMode" value="blur" /> Blur</label>
+                <label class="quality-opt"><input type="radio" name="bgMode" value="image" /> Image</label>
+              </div>
+              <div class="bg-image-row hidden" id="bgImageRow">
+                <input type="file" id="bgImageInput" accept="image/*" class="file-input" />
+                <span class="size-val" id="bgFileName">No file chosen</span>
+                <img id="bgPreview" class="bg-preview hidden" alt="" />
+              </div>
+              <div class="size-row hidden" id="blurAmountRow">
+                <span class="position-label">Blur strength</span>
+                <input type="range" id="blurAmount" min="8" max="32" value="18" class="size-slider" />
+                <span class="size-val" id="blurAmountVal">18px</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <h2 class="section-label">Captions</h2>
+          <div class="toggle-row">
+            <label class="toggle-label">Auto Captions *</label>
+            <label class="toggle">
+              <input type="checkbox" id="captionsToggle" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <p class="caption-note">* Chrome &amp; Edge only. Captions are burned into the recording and used to generate meeting notes &amp; action plans on export. Requires microphone.</p>
+          <p class="caption-status" id="captionStatus"></p>
+        </section>
+
+        <section class="panel-section">
+          <h2 class="section-label">Quality</h2>
+          <div class="quality-options">
+            <label class="quality-opt">
+              <input type="radio" name="quality" value="720" /> 720p
+            </label>
+            <label class="quality-opt active-q">
+              <input type="radio" name="quality" value="1080" checked /> 1080p
+            </label>
+            <label class="quality-opt">
+              <input type="radio" name="quality" value="4k" /> 4K
+            </label>
+          </div>
+        </section>
+
+        <div class="record-actions">
+          <button class="btn-record" id="recordBtn">
+            <span class="btn-record-dot"></span>
+            Start Recording
+          </button>
+          <button class="btn-pause" id="pauseBtn" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            Pause
+          </button>
+        </div>
+
+      </aside>
+
+      <!-- Center: Preview -->
+      <div class="preview-area">
+        <div class="preview-container" id="previewContainer">
+          <video id="screenPreview" autoplay muted playsinline></video>
+          <canvas id="composeCanvas" class="compose-canvas hidden"></canvas>
+          <video id="webcamPip" autoplay muted playsinline class="webcam-pip hidden"></video>
+          <div id="liveCaption" class="live-caption hidden"></div>
+          <div class="preview-idle" id="previewIdle">
+            <div class="idle-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+            </div>
+            <p>Select a source and click <strong>Start Recording</strong></p>
+          </div>
+        </div>
+
+        <!-- Recordings are downloaded immediately on stop — nothing is kept -->
+        <div class="recordings-section">
+          <h3 class="recordings-title">Recordings</h3>
+          <div class="recordings-list" id="recordingsList">
+            <p class="no-recordings">Fully stateless — all data wiped after export. Nothing stored between sessions.</p>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Export modal -->
+  <div id="exportModal" class="modal hidden" role="dialog" aria-labelledby="exportTitle">
+    <div class="modal-card">
+      <h2 id="exportTitle" class="modal-title">Export recording</h2>
+      <p class="modal-sub">Choose what to download. Voice transcript powers meeting notes and the action plan.</p>
+      <p class="modal-meta">Duration: <span id="exportDuration">—</span></p>
+      <div class="export-options">
+        <label class="export-opt"><input type="checkbox" id="exportVideo" checked /> Video recording (.mp4 / .webm)</label>
+        <label class="export-opt"><input type="checkbox" id="exportNotes" checked /> Meeting notes (.md)</label>
+        <label class="export-opt"><input type="checkbox" id="exportPdf" checked /> Action plan PDF (next steps)</label>
+        <label class="export-opt"><input type="checkbox" id="exportVtt" checked /> Captions sidecar (.vtt)</label>
+      </div>
+      <div class="export-preview-wrap">
+        <span class="position-label">Transcript preview</span>
+        <div id="exportPreview" class="export-preview">—</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-pause" id="exportCancel">Cancel</button>
+        <button type="button" class="btn-record" id="exportConfirm">Download selected</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
