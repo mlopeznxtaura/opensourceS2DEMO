@@ -38,10 +38,17 @@ if (-not $status) {
 $owner = (gh api user -q .login)
 $full = "$owner/$RepoName"
 
-if (gh repo view $full 2>$null) {
+$exists = $false
+try {
+    gh repo view $full --json name -q .name 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $exists = $true }
+} catch { $exists = $false }
+
+if ($exists) {
     Write-Host "Pushing to existing repo $full" -ForegroundColor Cyan
-    git remote get-url origin 2>$null
-    if ($LASTEXITCODE -ne 0) { git remote add origin "https://github.com/$full.git" }
+    if (-not (git remote get-url origin 2>$null)) {
+        git remote add origin "https://github.com/$full.git"
+    }
     git push -u origin main
 } else {
     gh repo create $RepoName --$Visibility --source=. --remote=origin --push
