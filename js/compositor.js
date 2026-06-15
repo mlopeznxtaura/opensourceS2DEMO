@@ -1,11 +1,13 @@
-/* Canvas compositor — screen + webcam PiP + captions into one video stream */
+/* Canvas compositor — screen + capture card + webcam PiP + captions */
 
 import { drawWebcamWithBackground } from './webcam-bg.js';
 
-export function createCompositor({ screenVideo, webcamVideo, canvas }) {
+export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, canvas }) {
   const ctx = canvas.getContext('2d');
   let rafId = null;
-  let pip = { x: 0.82, y: 0.82, size: 0.14 };
+  let webcamPip = { x: 0.82, y: 0.82, size: 0.14 };
+  let capturePip = { x: 0.18, y: 0.82, w: 0.28, h: 0.16 };
+  let captureEnabled = false;
   let captionText = '';
   let webcamBg = { mode: 'none', bgImage: null, blurPx: 18 };
 
@@ -13,13 +15,28 @@ export function createCompositor({ screenVideo, webcamVideo, canvas }) {
     webcamBg = { ...webcamBg, ...opts };
   }
 
-  function setPipFromElement(pipEl, containerEl) {
+  function setCaptureEnabled(on) {
+    captureEnabled = !!on;
+  }
+
+  function setPipFromElement(pipEl, containerEl, target = 'webcam') {
     if (!pipEl || !containerEl || pipEl.classList.contains('hidden')) return;
     const c = containerEl.getBoundingClientRect();
     const p = pipEl.getBoundingClientRect();
     if (!c.width || !c.height) return;
+
+    if (target === 'capture') {
+      capturePip = {
+        x: (p.left - c.left + p.width / 2) / c.width,
+        y: (p.top - c.top + p.height / 2) / c.height,
+        w: Math.max(0.12, Math.min(0.5, p.width / c.width)),
+        h: Math.max(0.08, Math.min(0.35, p.height / c.height)),
+      };
+      return;
+    }
+
     const size = Math.max(p.width, p.height) / Math.min(c.width, c.height);
-    pip = {
+    webcamPip = {
       x: (p.left - c.left + p.width / 2) / c.width,
       y: (p.top - c.top + p.height / 2) / c.height,
       size: Math.max(0.06, Math.min(0.35, size)),
@@ -28,13 +45,6 @@ export function createCompositor({ screenVideo, webcamVideo, canvas }) {
 
   function setCaption(text) {
     captionText = (text || '').trim();
-  }
-
-  function letterbox(srcW, srcH, dstW, dstH) {
-    const scale = Math.min(dstW / srcW, dstH / srcH);
-    const w = srcW * scale;
-    const h = srcH * scale;
-    return { x: (dstW - w) / 2, y: (dstH - h) / 2, w, h, scale };
   }
 
   function drawFrame() {
@@ -52,11 +62,37 @@ export function createCompositor({ screenVideo, webcamVideo, canvas }) {
       ctx.drawImage(screenVideo, 0, 0, vw, vh);
     }
 
+    const capOn = captureEnabled
+      && captureCardVideo
+      && captureCardVideo.srcObject
+      && captureCardVideo.readyState >= 2
+      && captureCardVideo.videoWidth > 0;
+
+    if (capOn) {
+      const pw = vw * capturePip.w;
+      const ph = vh * capturePip.h;
+      const px = Math.max(pw / 2, Math.min(vw - pw / 2, capturePip.x * vw)) - pw / 2;
+      const py = Math.max(ph / 2, Math.min(vh - ph / 2, capturePip.y * vh)) - ph / 2;
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 140, 66, 0.55)';
+      ctx.lineWidth = Math.max(2, vw * 0.002);
+      roundRect(ctx, px, py, pw, ph, 8);
+      ctx.clip();
+      ctx.drawImage(captureCardVideo, px, py, pw, ph);
+      ctx.restore();
+
+      ctx.strokeStyle = 'rgba(255, 140, 66, 0.55)';
+      ctx.lineWidth = Math.max(2, vw * 0.002);
+      roundRect(ctx, px, py, pw, ph, 8);
+      ctx.stroke();
+    }
+
     const camOn = webcamVideo && webcamVideo.srcObject && webcamVideo.readyState >= 2;
     if (camOn && webcamVideo.videoWidth > 0) {
-      const dim = Math.min(vw, vh) * pip.size;
-      const cx = pip.x * vw;
-      const cy = pip.y * vh;
+      const dim = Math.min(vw, vh) * webcamPip.size;
+      const cx = webcamPip.x * vw;
+      const cy = webcamPip.y * vh;
       const x = Math.max(dim / 2, Math.min(vw - dim / 2, cx)) - dim / 2;
       const y = Math.max(dim / 2, Math.min(vh - dim / 2, cy)) - dim / 2;
 
@@ -106,7 +142,15 @@ export function createCompositor({ screenVideo, webcamVideo, canvas }) {
     }
   }
 
-  return { start, stop, setPipFromElement, setCaption, setWebcamBackground, getPip: () => ({ ...pip }) };
+  return {
+    start,
+    stop,
+    setPipFromElement,
+    setCaption,
+    setWebcamBackground,
+    setCaptureEnabled,
+    getPip: () => ({ webcam: { ...webcamPip }, capture: { ...capturePip } }),
+  };
 }
 
 function wrapText(ctx, text, maxWidth) {

@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260615" />
+  <link rel="stylesheet" href="css/style.css?v=260616" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260615</span>
+        <span class="build-badge" title="Deployed build">build 260616</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -33,7 +33,7 @@
 
         <section class="panel-section">
           <h2 class="section-label">Capture Source</h2>
-          <div class="source-options source-options-4">
+          <div class="source-options">
             <label class="source-option" id="sourceScreen">
               <input type="radio" name="source" value="screen" checked />
               <div class="option-icon">
@@ -55,29 +55,49 @@
               </div>
               <span>Tab</span>
             </label>
-            <label class="source-option" id="sourceCapture">
-              <input type="radio" name="source" value="capturecard" />
-              <div class="option-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10l4 2-4 2z"/></svg>
-              </div>
-              <span>Capture card</span>
+          </div>
+          <p class="caption-note hidden" id="tabMigrateNote">Tab mode: webcam floats in a follow-along window on whatever tab you switch to.</p>
+        </section>
+
+        <section class="panel-section">
+          <h2 class="section-label">Capture Card</h2>
+          <div class="toggle-row">
+            <label class="toggle-label">Enable HDMI / capture input</label>
+            <label class="toggle">
+              <input type="checkbox" id="captureCardToggle" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </label>
           </div>
-          <div class="capture-card-row hidden" id="captureCardRow">
-            <span class="position-label">HDMI / capture device</span>
-            <select id="captureCardSelect" class="mic-select">
-              <option value="">Select capture card…</option>
-            </select>
-            <div class="toggle-row" style="margin-top:8px">
-              <label class="toggle-label">Capture card audio</label>
-              <label class="toggle">
-                <input type="checkbox" id="captureCardAudio" checked />
-                <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              </label>
+          <div class="capture-card-options hidden" id="captureCardOptions">
+            <div class="capture-card-row" id="captureCardRow">
+              <span class="position-label">Device</span>
+              <select id="captureCardSelect" class="mic-select">
+                <option value="">Select capture card…</option>
+              </select>
+              <div class="toggle-row" style="margin-top:8px">
+                <label class="toggle-label">Capture card audio</label>
+                <label class="toggle">
+                  <input type="checkbox" id="captureCardAudio" checked />
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+              </div>
+              <p class="caption-note">Layers on top of your screen/tab capture — use with webcam for gaming commentary.</p>
             </div>
-            <p class="caption-note">Use mic + webcam PiP to commentate over a live gaming feed.</p>
+            <div class="position-grid">
+              <span class="position-label">Card position</span>
+              <div class="position-buttons" id="capturePosButtons">
+                <button type="button" class="pos-btn" data-pos="bottom-right" title="Bottom Right">↘</button>
+                <button type="button" class="pos-btn active" data-pos="bottom-left" title="Bottom Left">↙</button>
+                <button type="button" class="pos-btn" data-pos="top-right" title="Top Right">↗</button>
+                <button type="button" class="pos-btn" data-pos="top-left" title="Top Left">↖</button>
+              </div>
+            </div>
+            <div class="size-row">
+              <span class="position-label">Card size</span>
+              <input type="range" id="captureCardSize" min="180" max="480" value="280" class="size-slider" />
+              <span class="size-val" id="captureCardSizeVal">280px</span>
+            </div>
           </div>
-        </section>
 
         <section class="panel-section">
           <h2 class="section-label">Audio</h2>
@@ -198,6 +218,7 @@
         <div class="preview-container" id="previewContainer">
           <video id="screenPreview" autoplay muted playsinline></video>
           <canvas id="composeCanvas" class="compose-canvas hidden"></canvas>
+          <video id="captureCardPip" autoplay muted playsinline class="capture-pip hidden"></video>
           <video id="webcamPip" autoplay muted playsinline class="webcam-pip hidden"></video>
           <div id="liveCaption" class="live-caption hidden"></div>
           <div class="preview-idle" id="previewIdle">
@@ -244,6 +265,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260615"></script>
+  <script type="module" src="js/app.js?v=260616"></script>
 </body>
 </html>

@@ -27,9 +27,11 @@ let pauseStart     = null;
 let totalPaused    = 0;
 let startTime      = null;
 let webcamPos      = 'bottom-right';
+let captureCardPos = 'bottom-left';
 let compositor     = null;
 let pendingExport  = null;
 let captureCardStream = null;
+let docPipWindow   = null;
 
 // Session-only (wiped after export — never persisted)
 let sessionBgImage = null;
@@ -42,6 +44,9 @@ screenCapture.playsInline = true;
 const webcamCapture = document.createElement('video');
 webcamCapture.muted = true;
 webcamCapture.playsInline = true;
+const captureCardCapture = document.createElement('video');
+captureCardCapture.muted = true;
+captureCardCapture.playsInline = true;
 const composeCanvas = $('composeCanvas');
 
 // ── DOM refs ───────────────────────────────────────
@@ -61,16 +66,30 @@ const micSelectRow   = $('micSelectRow');
 const camSizeSlider  = $('camSize');
 const camSizeVal     = $('camSizeVal');
 const exportModal    = $('exportModal');
-const captureCardRow = $('captureCardRow');
+const captureCardToggle = $('captureCardToggle');
+const captureCardOptions = $('captureCardOptions');
+const captureCardPip = $('captureCardPip');
+const captureCardSizeSlider = $('captureCardSize');
+const captureCardSizeVal = $('captureCardSizeVal');
+const tabMigrateNote = $('tabMigrateNote');
 const bgImageRow     = $('bgImageRow');
 const blurAmountRow  = $('blurAmountRow');
 const bgImageInput   = $('bgImageInput');
 
 compositor = createCompositor({
   screenVideo: screenCapture,
+  captureCardVideo: captureCardCapture,
   webcamVideo: webcamCapture,
   canvas: composeCanvas,
 });
+
+function isTabSource() {
+  return document.querySelector('input[name="source"]:checked')?.value === 'tab';
+}
+
+function canMigrateWebcam() {
+  return isTabSource() && webcamToggle.checked && 'documentPictureInPicture' in window;
+}
 
 // ── Init: enumerate devices ────────────────────────
 async function enumerateDevices() {
@@ -115,20 +134,117 @@ async function enumerateDevices() {
 
 enumerateDevices();
 
-// ── Capture source mode ────────────────────────────
+// ── Capture source + tab migrate hint ───────────────
 document.querySelectorAll('input[name="source"]').forEach(r => {
-  r.addEventListener('change', () => {
-    const isCapture = r.value === 'capturecard' && r.checked;
-    captureCardRow?.classList.toggle('hidden', !isCapture);
-    const sysRow = $('systemAudio')?.closest('.toggle-row');
-    if (isCapture) {
-      $('systemAudio').checked = false;
-      if (sysRow) sysRow.style.opacity = '0.45';
-    } else if (sysRow) {
-      sysRow.style.opacity = '1';
+  r.addEventListener('change', async () => {
+    tabMigrateNote?.classList.toggle('hidden', !isTabSource());
+    if (webcamToggle.checked) {
+      await syncWebcamPresentation();
     }
   });
 });
+
+// ── Capture card (additive overlay) ────────────────
+captureCardToggle?.addEventListener('change', async () => {
+  const on = captureCardToggle.checked;
+  captureCardOptions?.classList.toggle('hidden', !on);
+  if (on) await startCaptureCardPreview();
+  else stopCaptureCardPreview();
+});
+
+$('captureCardSelect')?.addEventListener('change', async () => {
+  if (captureCardToggle?.checked) {
+    stopCaptureCardPreview();
+    await startCaptureCardPreview();
+  }
+});
+
+captureCardSizeSlider?.addEventListener('input', () => {
+  const v = parseInt(captureCardSizeSlider.value, 10);
+  if (captureCardSizeVal) captureCardSizeVal.textContent = v + 'px';
+  applyCaptureCardSize(v);
+  syncCompositorCapturePip();
+});
+
+document.querySelectorAll('#capturePosButtons .pos-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#capturePosButtons .pos-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    captureCardPos = btn.dataset.pos;
+    applyCaptureCardPos(captureCardPos);
+    syncCompositorCapturePip();
+  });
+});
+
+async function ensureCaptureCardStream() {
+  if (captureCardStream) return captureCardStream;
+  const devId = $('captureCardSelect')?.value;
+  if (!devId) throw new Error('Select a capture card device first.');
+  captureCardStream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      deviceId: { exact: devId },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 60 },
+    },
+    audio: false,
+  });
+  return captureCardStream;
+}
+
+async function startCaptureCardPreview() {
+  try {
+    await ensureCaptureCardStream();
+    captureCardPip.srcObject = captureCardStream;
+    captureCardCapture.srcObject = captureCardStream;
+    await captureCardCapture.play().catch(() => {});
+    captureCardPip.classList.remove('hidden');
+    applyCaptureCardPos(captureCardPos);
+    applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '280', 10));
+    compositor.setCaptureEnabled(true);
+    syncCompositorCapturePip();
+    previewIdle?.classList.add('hidden');
+    setStatus('ready', 'Ready');
+  } catch (e) {
+    alert('Could not access capture card: ' + e.message);
+    captureCardToggle.checked = false;
+    captureCardOptions?.classList.add('hidden');
+  }
+}
+
+function stopCaptureCardPreview() {
+  if (captureCardStream) {
+    captureCardStream.getTracks().forEach(t => t.stop());
+    captureCardStream = null;
+  }
+  captureCardPip.srcObject = null;
+  captureCardCapture.srcObject = null;
+  captureCardPip.classList.add('hidden');
+  compositor.setCaptureEnabled(false);
+}
+
+function applyCaptureCardPos(pos) {
+  captureCardPip.style.left = captureCardPip.style.top = captureCardPip.style.right = captureCardPip.style.bottom = 'auto';
+  captureCardPip.className = captureCardPip.className.replace(/pos-\S+/g, '').trim();
+  captureCardPip.classList.add(`pos-${pos}`, 'capture-pip');
+  captureCardPip.classList.remove('hidden');
+  syncCompositorCapturePip();
+}
+
+function applyCaptureCardSize(widthPx) {
+  const h = Math.round(widthPx * 9 / 16);
+  captureCardPip.style.width = widthPx + 'px';
+  captureCardPip.style.height = h + 'px';
+  syncCompositorCapturePip();
+}
+
+function syncCompositorCapturePip() {
+  compositor.setPipFromElement(captureCardPip, previewContainer, 'capture');
+}
+
+function syncCompositorPip() {
+  compositor.setPipFromElement(webcamPip, previewContainer, 'webcam');
+}
 
 // ── Webcam background (session-only) ───────────────
 function getBgMode() {
@@ -222,8 +338,6 @@ $('camSelect').addEventListener('change', async () => {
   }
 });
 
-$('micSelect').addEventListener('change', () => {});
-
 async function ensureWebcamStream() {
   if (webcamStream) return webcamStream;
   const camId = $('camSelect').value;
@@ -237,11 +351,9 @@ async function ensureWebcamStream() {
 async function startWebcamPreview() {
   try {
     await ensureWebcamStream();
-    webcamPip.srcObject = webcamStream;
     webcamCapture.srcObject = webcamStream;
     await webcamCapture.play().catch(() => {});
-    webcamPip.classList.remove('hidden');
-    applyWebcamPos(webcamPos);
+    await syncWebcamPresentation();
     applyWebcamSize(parseInt(camSizeSlider.value));
     syncCompositorPip();
     syncCompositorBackground();
@@ -253,7 +365,66 @@ async function startWebcamPreview() {
   }
 }
 
+async function syncWebcamPresentation() {
+  if (canMigrateWebcam()) {
+    const opened = await openWebcamDocumentPiP();
+    if (opened) {
+      webcamPip.classList.add('hidden');
+      return;
+    }
+  }
+  closeWebcamDocumentPiP();
+  webcamPip.srcObject = webcamStream;
+  webcamPip.classList.remove('hidden');
+  applyWebcamPos(webcamPos);
+}
+
+async function openWebcamDocumentPiP() {
+  if (!window.documentPictureInPicture?.requestWindow || !webcamStream) return false;
+  try {
+    closeWebcamDocumentPiP();
+    const size = parseInt(camSizeSlider.value, 10) || 160;
+    docPipWindow = await documentPictureInPicture.requestWindow({
+      width: size,
+      height: size,
+    });
+    const doc = docPipWindow.document;
+    doc.body.style.cssText = 'margin:0;background:#0d0e11;overflow:hidden;';
+    const style = doc.createElement('style');
+    style.textContent = `
+      video { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+      .hint { position:absolute; bottom:4px; left:0; right:0; text-align:center;
+        font:10px/1.2 Inter,system-ui,sans-serif; color:#8b8fa8; pointer-events:none; }
+    `;
+    doc.head.append(style);
+    const video = doc.createElement('video');
+    video.srcObject = webcamStream;
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    doc.body.append(video);
+    const hint = doc.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = 'Follows your active tab';
+    doc.body.append(hint);
+    docPipWindow.addEventListener('pagehide', () => { docPipWindow = null; });
+    return true;
+  } catch (e) {
+    console.warn('Document PiP unavailable:', e);
+    docPipWindow = null;
+    return false;
+  }
+}
+
+function closeWebcamDocumentPiP() {
+  if (docPipWindow && !docPipWindow.closed) {
+    try { docPipWindow.close(); } catch (_) {}
+  }
+  docPipWindow = null;
+}
+
 function stopWebcamPreview() {
+  closeWebcamDocumentPiP();
   if (webcamStream) {
     webcamStream.getTracks().forEach(t => t.stop());
     webcamStream = null;
@@ -261,10 +432,6 @@ function stopWebcamPreview() {
   webcamPip.srcObject = null;
   webcamCapture.srcObject = null;
   webcamPip.classList.add('hidden');
-}
-
-function syncCompositorPip() {
-  compositor.setPipFromElement(webcamPip, previewContainer);
 }
 
 document.querySelectorAll('.pos-btn').forEach(btn => {
@@ -298,37 +465,45 @@ function applyWebcamSize(size) {
   syncCompositorPip();
 }
 
-let dragging = false, dragOffX = 0, dragOffY = 0;
+let dragging = false, dragOffX = 0, dragOffY = 0, dragTarget = null;
 
-webcamPip.addEventListener('mousedown', e => {
+function startDrag(e, el) {
   dragging = true;
-  const rect = webcamPip.getBoundingClientRect();
+  dragTarget = el;
+  const rect = el.getBoundingClientRect();
   dragOffX = e.clientX - rect.left;
   dragOffY = e.clientY - rect.top;
-  webcamPip.style.transition = 'none';
+  el.style.transition = 'none';
   e.preventDefault();
-});
+}
+
+webcamPip.addEventListener('mousedown', e => startDrag(e, webcamPip));
+captureCardPip?.addEventListener('mousedown', e => startDrag(e, captureCardPip));
 
 document.addEventListener('mousemove', e => {
-  if (!dragging) return;
+  if (!dragging || !dragTarget) return;
   const container = previewContainer.getBoundingClientRect();
   let x = e.clientX - container.left - dragOffX;
   let y = e.clientY - container.top  - dragOffY;
-  const size = parseInt(webcamPip.style.width) || 160;
-  x = Math.max(0, Math.min(x, container.width  - size));
-  y = Math.max(0, Math.min(y, container.height - size));
-  webcamPip.style.left   = x + 'px';
-  webcamPip.style.top    = y + 'px';
-  webcamPip.style.right  = 'auto';
-  webcamPip.style.bottom = 'auto';
-  syncCompositorPip();
+  const w = parseInt(dragTarget.style.width, 10) || dragTarget.offsetWidth || 160;
+  const h = parseInt(dragTarget.style.height, 10) || dragTarget.offsetHeight || 160;
+  x = Math.max(0, Math.min(x, container.width  - w));
+  y = Math.max(0, Math.min(y, container.height - h));
+  dragTarget.style.left   = x + 'px';
+  dragTarget.style.top    = y + 'px';
+  dragTarget.style.right  = 'auto';
+  dragTarget.style.bottom = 'auto';
+  if (dragTarget === webcamPip) syncCompositorPip();
+  else syncCompositorCapturePip();
 });
 
 document.addEventListener('mouseup', () => {
   if (dragging) {
     dragging = false;
-    webcamPip.style.transition = '';
+    if (dragTarget) dragTarget.style.transition = '';
+    dragTarget = null;
     syncCompositorPip();
+    syncCompositorCapturePip();
   }
 });
 
@@ -504,14 +679,29 @@ async function startRecording() {
 
     const sourceValue = document.querySelector('input[name="source"]:checked').value;
     const audioTracks = [];
+    const wantCaptureCard = captureCardToggle?.checked;
 
-    if (sourceValue === 'capturecard') {
-      const devId = $('captureCardSelect').value;
+    const captureOpts = {
+      video: { cursor: 'always' },
+      audio: $('systemAudio').checked,
+    };
+    if (sourceValue === 'tab') captureOpts.preferCurrentTab = true;
+    screenStream = await navigator.mediaDevices.getDisplayMedia(captureOpts);
+    screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
+
+    if (wantCaptureCard) {
+      const devId = $('captureCardSelect')?.value;
       if (!devId) {
-        alert('Select a capture card / HDMI input first.');
+        alert('Select a capture card / HDMI device first.');
+        screenStream.getTracks().forEach(t => t.stop());
+        screenStream = null;
         return;
       }
       const wantCapAudio = $('captureCardAudio')?.checked;
+      if (captureCardStream) {
+        captureCardStream.getTracks().forEach(t => t.stop());
+        captureCardStream = null;
+      }
       captureCardStream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: { exact: devId },
@@ -521,18 +711,18 @@ async function startRecording() {
         },
         audio: wantCapAudio,
       });
-      screenStream = captureCardStream;
       if (wantCapAudio) {
         captureCardStream.getAudioTracks().forEach(t => audioTracks.push(t));
       }
+      const capVideo = new MediaStream(captureCardStream.getVideoTracks());
+      captureCardCapture.srcObject = capVideo;
+      await captureCardCapture.play().catch(() => {});
+      captureCardPip.srcObject = capVideo;
+      captureCardPip.classList.remove('hidden');
+      compositor.setCaptureEnabled(true);
+      syncCompositorCapturePip();
     } else {
-      const captureOpts = {
-        video: { cursor: 'always' },
-        audio: $('systemAudio').checked,
-      };
-      if (sourceValue === 'tab') captureOpts.preferCurrentTab = true;
-      screenStream = await navigator.mediaDevices.getDisplayMedia(captureOpts);
-      screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
+      compositor.setCaptureEnabled(false);
     }
 
     if (micAudioChk.checked) {
@@ -566,8 +756,7 @@ async function startRecording() {
       if (!webcamStream) await startWebcamPreview();
       webcamCapture.srcObject = webcamStream;
       await webcamCapture.play().catch(() => {});
-      webcamPip.srcObject = webcamStream;
-      webcamPip.classList.remove('hidden');
+      await syncWebcamPresentation();
       syncCompositorPip();
     }
 
@@ -729,19 +918,26 @@ exportModal?.addEventListener('click', e => {
 
 function cleanup() {
   compositor?.stop();
+  closeWebcamDocumentPiP();
   if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
   if (captureCardStream) { captureCardStream.getTracks().forEach(t => t.stop()); captureCardStream = null; }
   if (micStream)    { micStream.getTracks().forEach(t => t.stop());    micStream    = null; }
   screenCapture.srcObject = null;
+  captureCardCapture.srcObject = null;
+  compositor.setCaptureEnabled(false);
   composeCanvas.classList.add('hidden');
   screenPreview.srcObject = null;
   screenPreview.classList.remove('active');
   pendingExport = null;
-  if (!webcamToggle.checked) {
+  const anyPreview = webcamToggle.checked || captureCardToggle?.checked;
+  if (!anyPreview) {
     webcamPip.classList.add('hidden');
+    captureCardPip?.classList.add('hidden');
     previewIdle.classList.remove('hidden');
   } else {
     previewIdle.classList.add('hidden');
+    if (!webcamToggle.checked) webcamPip.classList.add('hidden');
+    if (!captureCardToggle?.checked) captureCardPip?.classList.add('hidden');
   }
 }
 

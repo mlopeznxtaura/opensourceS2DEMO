@@ -179,6 +179,13 @@ html, body {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.capture-card-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 .capture-card-row {
   display: flex;
   flex-direction: column;
@@ -529,6 +536,27 @@ html, body {
   object-fit: contain;
   display: block;
 }
+
+.capture-pip {
+  position: absolute;
+  border-radius: var(--radius);
+  object-fit: cover;
+  border: 2px solid rgba(255, 140, 66, 0.45);
+  box-shadow: 0 4px 28px rgba(0,0,0,0.65);
+  transition: all 0.3s ease;
+  cursor: move;
+  width: 280px;
+  height: 158px;
+  user-select: none;
+  z-index: 12;
+  aspect-ratio: 16 / 9;
+}
+
+.capture-pip.pos-bottom-right { bottom: 16px; right: 16px; }
+.capture-pip.pos-bottom-left  { bottom: 16px; left: 16px; }
+.capture-pip.pos-top-right    { top: 16px; right: 16px; }
+.capture-pip.pos-top-left     { top: 16px; left: 16px; }
+.capture-pip.hidden { display: none; }
 
 .webcam-pip {
   position: absolute;
