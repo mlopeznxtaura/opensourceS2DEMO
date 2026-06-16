@@ -29,6 +29,7 @@ import {
   mimeToExtension,
   requestVideoPermission,
   getCaptureCardStream,
+  findPairedAudioDevice,
 } from './platform.js';
 
 const $ = id => document.getElementById(id);
@@ -309,25 +310,40 @@ function setCaptureCardAudioStatus(msg) {
   if (el) el.textContent = msg || '';
 }
 
-function wireCaptureCardAudioMonitor(stream) {
+async function wireCaptureCardAudioMonitor(stream) {
   const monitor = $('captureCardMonitor');
   if (!monitor) return;
-  const tracks = stream?.getAudioTracks() || [];
+  const tracks = (stream?.getAudioTracks() || []).filter(t => t.readyState === 'live');
+  tracks.forEach(t => { t.enabled = true; });
+
   if (tracks.length && wantCaptureCardAudio()) {
     monitor.srcObject = new MediaStream(tracks);
     monitor.muted = false;
     monitor.volume = 1;
-    monitor.play().catch(() => {});
-    setCaptureCardAudioStatus(`HDMI audio: ${tracks[0].label || 'paired capture input'}`);
+    await monitor.play().catch(() => {});
+    setCaptureCardAudioStatus(`HDMI audio live: ${tracks[0].label || 'capture input'}`);
   } else {
     monitor.srcObject = null;
     if (wantCaptureCardAudio()) {
-      setCaptureCardAudioStatus('No HDMI audio on this capture device.');
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const paired = findPairedAudioDevice(getSelectedCaptureDeviceId(), devices);
+      setCaptureCardAudioStatus(
+        paired
+          ? `No signal on “${paired.label}” — check Chromecast/TV volume and HDMI cable.`
+          : 'No HDMI audio device found for this capture card.',
+      );
     } else {
       setCaptureCardAudioStatus('');
     }
   }
 }
+
+function playCaptureAudioMonitor() {
+  const monitor = $('captureCardMonitor');
+  if (monitor?.srcObject) monitor.play().catch(() => {});
+}
+
+document.addEventListener('click', playCaptureAudioMonitor, { once: true });
 
 captureCardToggle?.addEventListener('change', async () => {
   const on = captureCardToggle.checked;
@@ -382,8 +398,10 @@ async function ensureCaptureCardStream() {
   const devId = getSelectedCaptureDeviceId();
   if (!devId) throw new Error('Select a capture card device first.');
   assertDistinctVideoFeeds();
+  const needsAudio = wantCaptureCardAudio();
+  const hasAudio = !!(captureCardStream?.getAudioTracks().some(t => t.readyState === 'live'));
   if (captureCardStream && activeCaptureDeviceId === devId && isStreamLive(captureCardStream)) {
-    return captureCardStream;
+    if (!needsAudio || hasAudio) return captureCardStream;
   }
   stopCaptureCardTracks();
   captureCardStream = await openCaptureCardStream();
@@ -410,7 +428,7 @@ async function attachCaptureCardPreview(stream) {
   captureCardPip.srcObject = videoOnly;
   captureCardCapture.srcObject = videoOnly;
   await playVideo(captureCardCapture);
-  wireCaptureCardAudioMonitor(stream);
+  await wireCaptureCardAudioMonitor(stream);
   captureCardPip.classList.remove('hidden');
   applyCaptureCardPos(captureCardPos);
   applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '560', 10));
@@ -1073,7 +1091,10 @@ async function startRecording() {
       const wantCapAudio = wantCaptureCardAudio();
       captureCardStream = await ensureCaptureCardStream();
       if (wantCapAudio) {
-        captureCardStream.getAudioTracks().forEach(t => audioTracks.push(t));
+        captureCardStream.getAudioTracks().forEach(t => {
+          t.enabled = true;
+          audioTracks.push(t);
+        });
       }
       await attachCaptureCardPreview(captureCardStream);
     } else if (main.role === 'capturecard') {
@@ -1081,9 +1102,12 @@ async function startRecording() {
       captureCardCapture.srcObject = new MediaStream(screenStream.getVideoTracks());
       await playVideo(captureCardCapture);
       if (wantCaptureCardAudio()) {
-        screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
+        screenStream.getAudioTracks().forEach(t => {
+          t.enabled = true;
+          audioTracks.push(t);
+        });
       }
-      wireCaptureCardAudioMonitor(screenStream);
+      await wireCaptureCardAudioMonitor(screenStream);
       compositor.setCaptureEnabled(false);
       compositor.setCaptureAsMain(true);
       skipWebcamPip = false;

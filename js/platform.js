@@ -199,52 +199,61 @@ export function findPairedAudioDevice(videoDeviceId, devices) {
   const video = devices.find(d => d.deviceId === videoDeviceId && d.kind === 'videoinput');
   if (!video) return null;
 
+  const audioInputs = devices.filter(d => d.kind === 'audioinput' && d.deviceId);
+  if (!audioInputs.length) return null;
+
   if (video.groupId) {
-    const mate = devices.find(
-      d => d.kind === 'audioinput' && d.groupId === video.groupId && d.deviceId,
-    );
+    const mate = audioInputs.find(d => d.groupId === video.groupId);
+    if (mate) return mate;
+  }
+
+  const vLabel = video.label.toLowerCase();
+  const usbMatch = video.label.match(/\(([0-9a-f]{4}:[0-9a-f]{4})\)/i);
+  if (usbMatch) {
+    const mate = audioInputs.find(a => a.label.toLowerCase().includes(usbMatch[1].toLowerCase()));
     if (mate) return mate;
   }
 
   const stem = video.label.split('(')[0].trim().toLowerCase();
   if (stem.length > 2) {
-    const mate = devices.find(
-      d => d.kind === 'audioinput'
-        && d.deviceId
-        && d.label.toLowerCase().includes(stem),
-    );
+    const mate = audioInputs.find(a => a.label.toLowerCase().includes(stem));
     if (mate) return mate;
+  }
+
+  for (const word of stem.split(/[\s_-]+/).filter(w => w.length > 3)) {
+    const mate = audioInputs.find(a => a.label.toLowerCase().includes(word));
+    if (mate) return mate;
+  }
+
+  if (/nearstream|ccd10|gc3101|hdmi|capture|elgato|avermedia|cam link/i.test(vLabel)) {
+    const hdmiAudio = audioInputs.filter(a => {
+      const al = a.label.toLowerCase();
+      return /digital audio|hdmi|capture|line in|interface|mux|ccd10|nearstream|gc3101/.test(al)
+        && !/webcam|microphone array|mic \(|headset|realtek audio/.test(al);
+    });
+    if (hdmiAudio.length === 1) return hdmiAudio[0];
+    if (hdmiAudio.length > 1) {
+      for (const word of ['nearstream', 'ccd10', 'gc3101', 'digital audio']) {
+        const mate = hdmiAudio.find(a => a.label.toLowerCase().includes(word));
+        if (mate) return mate;
+      }
+      return hdmiAudio[0];
+    }
   }
 
   return null;
 }
 
-function captureAudioConstraints(audioDeviceId) {
-  const processing = {
+function captureAudioProcessing() {
+  return {
     echoCancellation: false,
     noiseSuppression: false,
     autoGainControl: false,
+    channelCount: { ideal: 2 },
   };
-  if (audioDeviceId) {
-    return { deviceId: { ideal: audioDeviceId }, ...processing };
-  }
-  return processing;
 }
 
-/**
- * Open a capture-card / HDMI input. Binds HDMI audio to the capture hardware,
- * not the default microphone (audio: true alone is wrong for Chromecast-in-HDMI).
- */
-export async function getCaptureCardStream(videoDeviceId, { audio = false, audioDeviceId = null } = {}) {
-  if (!videoDeviceId) throw new Error('Select a capture card device first.');
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const paired = audio && !audioDeviceId
-    ? findPairedAudioDevice(videoDeviceId, devices)
-    : null;
-  const audioId = audioDeviceId || paired?.deviceId || null;
-  const audioC = audio ? captureAudioConstraints(audioId) : false;
-
+async function openVideoOnlyStream(videoDeviceId) {
   const videoAttempts = [
     { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
     { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -257,7 +266,7 @@ export async function getCaptureCardStream(videoDeviceId, { audio = false, audio
       ? { deviceId: { exact: videoDeviceId } }
       : { deviceId: { exact: videoDeviceId }, ...video };
     try {
-      return await navigator.mediaDevices.getUserMedia({ video: videoExact, audio: audioC });
+      return await navigator.mediaDevices.getUserMedia({ video: videoExact, audio: false });
     } catch (err) {
       lastErr = err;
       if (err.name === 'NotAllowedError' || err.name === 'SecurityError') throw err;
@@ -266,27 +275,61 @@ export async function getCaptureCardStream(videoDeviceId, { audio = false, audio
       ? { deviceId: { ideal: videoDeviceId } }
       : { deviceId: { ideal: videoDeviceId }, ...video };
     try {
-      return await navigator.mediaDevices.getUserMedia({ video: videoIdeal, audio: audioC });
+      return await navigator.mediaDevices.getUserMedia({ video: videoIdeal, audio: false });
+    } catch (err) {
+      lastErr = err;
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') throw err;
+    }
+  }
+  throw lastErr || new Error('Could not open capture card video');
+}
+
+async function attachHdmiAudio(videoStream, videoDeviceId, audioDeviceId) {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const paired = audioDeviceId
+    ? devices.find(d => d.deviceId === audioDeviceId && d.kind === 'audioinput')
+    : findPairedAudioDevice(videoDeviceId, devices);
+
+  const pairedId = paired?.deviceId || audioDeviceId || null;
+  const processing = captureAudioProcessing();
+  const attempts = pairedId
+    ? [
+        { ...processing, deviceId: { exact: pairedId } },
+        { ...processing, deviceId: { ideal: pairedId } },
+      ]
+    : [processing];
+
+  let lastErr;
+  for (const audio of attempts) {
+    try {
+      const audioStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+      audioStream.getAudioTracks().forEach(track => {
+        track.enabled = true;
+        videoStream.addTrack(track);
+      });
+      return { pairedLabel: paired?.label || audioStream.getAudioTracks()[0]?.label || '' };
     } catch (err) {
       lastErr = err;
       if (err.name === 'NotAllowedError' || err.name === 'SecurityError') throw err;
     }
   }
 
-  if (audio) {
-    for (const video of videoAttempts) {
-      const videoIdeal = video === true
-        ? { deviceId: { ideal: videoDeviceId } }
-        : { deviceId: { ideal: videoDeviceId }, ...video };
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: videoIdeal, audio: false });
-        console.warn('Capture card video OK but HDMI audio unavailable:', lastErr);
-        return stream;
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-  }
+  console.warn('HDMI audio could not be opened:', lastErr, paired?.label);
+  return { pairedLabel: paired?.label || '', error: lastErr };
+}
 
-  throw lastErr || new Error('Could not open capture card');
+/**
+ * Open capture-card video, then bind HDMI audio on a separate track (Windows-friendly).
+ */
+export async function getCaptureCardStream(videoDeviceId, { audio = false, audioDeviceId = null } = {}) {
+  if (!videoDeviceId) throw new Error('Select a capture card device first.');
+
+  const videoStream = await openVideoOnlyStream(videoDeviceId);
+  if (!audio) return videoStream;
+
+  const { pairedLabel, error } = await attachHdmiAudio(videoStream, videoDeviceId, audioDeviceId);
+  if (!videoStream.getAudioTracks().length) {
+    console.warn('Capture card video OK but HDMI audio unavailable:', error, pairedLabel);
+  }
+  return videoStream;
 }
