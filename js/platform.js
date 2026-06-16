@@ -65,26 +65,115 @@ export async function waitForVideoFrame(video, timeoutMs = 8000) {
 }
 
 let audioCtx = null;
+let hdmiMonitorCtx = null;
+let hdmiMonitorNodes = [];
 
-export async function mixAudioTracks(tracks) {
-  if (!tracks.length) return [];
-  if (tracks.length === 1) return [tracks[0]];
+function isHdmiCaptureAudioLabel(label) {
+  const l = (label || '').toLowerCase();
+  return /digital audio|hdmi|capture|line in|interface|ccd10|nearstream|gc3101/.test(l)
+    && !/webcam|microphone array|headset/.test(l);
+}
+
+/** Hear HDMI in speakers using a cloned track — does not block mic or recording. */
+export async function startHdmiAudioMonitor(tracks) {
+  stopHdmiAudioMonitor();
+  const live = (tracks || []).filter(t => t.readyState === 'live');
+  if (!live.length) return false;
 
   const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return [tracks[0]];
+  if (!Ctx) return false;
+
+  hdmiMonitorCtx = hdmiMonitorCtx || new Ctx();
+  if (hdmiMonitorCtx.state === 'suspended') await hdmiMonitorCtx.resume();
+
+  const clones = live.map(t => t.clone());
+  const source = hdmiMonitorCtx.createMediaStreamSource(new MediaStream(clones));
+  const gain = hdmiMonitorCtx.createGain();
+  gain.gain.value = 1;
+  source.connect(gain);
+  gain.connect(hdmiMonitorCtx.destination);
+  hdmiMonitorNodes.push({ source, gain, clones });
+  return true;
+}
+
+export function stopHdmiAudioMonitor() {
+  hdmiMonitorNodes.forEach(({ source, gain, clones }) => {
+    try { source.disconnect(); gain.disconnect(); } catch (_) {}
+    clones.forEach(t => { try { t.stop(); } catch (_) {} });
+  });
+  hdmiMonitorNodes = [];
+}
+
+export async function resumeAudioContexts() {
+  if (hdmiMonitorCtx?.state === 'suspended') await hdmiMonitorCtx.resume();
+  if (audioCtx?.state === 'suspended') await audioCtx.resume();
+}
+
+export async function mixAudioTracks(tracks) {
+  const live = (tracks || []).filter(t => t && t.readyState === 'live');
+  if (!live.length) return [];
+  if (live.length === 1) return [live[0].clone()];
+
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return live.map(t => t.clone());
 
   if (!audioCtx) audioCtx = new Ctx();
   if (audioCtx.state === 'suspended') await audioCtx.resume();
 
   const dest = audioCtx.createMediaStreamDestination();
-  tracks.forEach(track => {
+  live.forEach(track => {
     try {
-      audioCtx.createMediaStreamSource(new MediaStream([track])).connect(dest);
+      const clone = track.clone();
+      audioCtx.createMediaStreamSource(new MediaStream([clone])).connect(dest);
     } catch (err) {
       console.warn('Skipped audio track in mix:', err);
     }
   });
   return dest.stream.getAudioTracks();
+}
+
+/** Mic for voice — never grabs the HDMI capture audio device. */
+export async function openMicStream(micDeviceId, excludeDeviceIds = []) {
+  const processing = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+  const exclude = new Set((excludeDeviceIds || []).filter(Boolean));
+
+  const attempts = [];
+  if (micDeviceId && !exclude.has(micDeviceId)) {
+    attempts.push({ audio: { deviceId: { exact: micDeviceId }, ...processing }, video: false });
+    attempts.push({ audio: { deviceId: { ideal: micDeviceId }, ...processing }, video: false });
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  for (const d of devices.filter(x => x.kind === 'audioinput' && x.deviceId)) {
+    if (exclude.has(d.deviceId)) continue;
+    if (isHdmiCaptureAudioLabel(d.label)) continue;
+    attempts.push({ audio: { deviceId: { ideal: d.deviceId }, ...processing }, video: false });
+  }
+
+  attempts.push({ audio: processing, video: false });
+
+  let lastErr;
+  for (const constraints of attempts) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const track = stream.getAudioTracks()[0];
+      const devId = track?.getSettings?.().deviceId;
+      if ((devId && exclude.has(devId)) || isHdmiCaptureAudioLabel(track?.label)) {
+        track?.stop();
+        continue;
+      }
+      track.enabled = true;
+      return stream;
+    } catch (err) {
+      lastErr = err;
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') throw err;
+    }
+  }
+  throw lastErr || new Error('Microphone unavailable');
 }
 
 export async function getUserMediaVideo(deviceId, { audio = false } = {}) {

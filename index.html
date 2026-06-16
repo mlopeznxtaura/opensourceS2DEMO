@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260617-hdmifix" />
+  <link rel="stylesheet" href="css/style.css?v=260617-dualaudio" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260617-hdmifix</span>
+        <span class="build-badge" title="Deployed build">build 260617-dualaudio</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -121,6 +121,7 @@
             <select id="micSelect" class="mic-select">
               <option value="">Default Microphone</option>
             </select>
+            <p class="caption-note">Voice mic only — Chromecast/HDMI sound uses Feed 1. Both record together.</p>
           </div>
         </section>
 
@@ -299,7 +300,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260617-hdmifix"></script>
+  <script type="module" src="js/app.js?v=260617-dualaudio"></script>
   <audio id="captureCardMonitor" class="hidden" playsinline></audio>
 </body>
 </html>

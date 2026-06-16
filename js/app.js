@@ -30,6 +30,10 @@ import {
   requestVideoPermission,
   getCaptureCardStream,
   findPairedAudioDevice,
+  startHdmiAudioMonitor,
+  stopHdmiAudioMonitor,
+  resumeAudioContexts,
+  openMicStream,
 } from './platform.js';
 
 const $ = id => document.getElementById(id);
@@ -310,20 +314,29 @@ function setCaptureCardAudioStatus(msg) {
   if (el) el.textContent = msg || '';
 }
 
+async function getExcludedMicDeviceIds() {
+  if (!captureCardToggle?.checked || !wantCaptureCardAudio()) return [];
+  const devId = getSelectedCaptureDeviceId();
+  if (!devId) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const paired = findPairedAudioDevice(devId, devices);
+  return paired?.deviceId ? [paired.deviceId] : [];
+}
+
 async function wireCaptureCardAudioMonitor(stream) {
-  const monitor = $('captureCardMonitor');
-  if (!monitor) return;
   const tracks = (stream?.getAudioTracks() || []).filter(t => t.readyState === 'live');
   tracks.forEach(t => { t.enabled = true; });
 
   if (tracks.length && wantCaptureCardAudio()) {
-    monitor.srcObject = new MediaStream(tracks);
-    monitor.muted = false;
-    monitor.volume = 1;
-    await monitor.play().catch(() => {});
-    setCaptureCardAudioStatus(`HDMI audio live: ${tracks[0].label || 'capture input'}`);
+    await resumeAudioContexts();
+    const monitoring = await startHdmiAudioMonitor(tracks);
+    setCaptureCardAudioStatus(
+      monitoring
+        ? `HDMI audio live: ${tracks[0].label || 'capture input'} (mic can stay on)`
+        : `HDMI audio captured: ${tracks[0].label || 'capture input'} — click page to hear it`,
+    );
   } else {
-    monitor.srcObject = null;
+    stopHdmiAudioMonitor();
     if (wantCaptureCardAudio()) {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const paired = findPairedAudioDevice(getSelectedCaptureDeviceId(), devices);
@@ -338,12 +351,14 @@ async function wireCaptureCardAudioMonitor(stream) {
   }
 }
 
-function playCaptureAudioMonitor() {
-  const monitor = $('captureCardMonitor');
-  if (monitor?.srcObject) monitor.play().catch(() => {});
+async function playCaptureAudioMonitor() {
+  await resumeAudioContexts();
+  if (captureCardStream?.getAudioTracks().length) {
+    await wireCaptureCardAudioMonitor(captureCardStream);
+  }
 }
 
-document.addEventListener('click', playCaptureAudioMonitor, { once: true });
+document.addEventListener('click', () => { playCaptureAudioMonitor(); }, { once: true });
 
 captureCardToggle?.addEventListener('change', async () => {
   const on = captureCardToggle.checked;
@@ -455,8 +470,7 @@ async function startCaptureCardPreview() {
 }
 
 function stopCaptureCardPreview() {
-  const monitor = $('captureCardMonitor');
-  if (monitor) monitor.srcObject = null;
+  stopHdmiAudioMonitor();
   setCaptureCardAudioStatus('');
   stopCaptureCardTracks();
   captureCardPip.srcObject = null;
@@ -1120,23 +1134,8 @@ async function startRecording() {
 
     if (micAudioChk.checked) {
       try {
-        const micId = $('micSelect').value;
-        const micAttempts = micId
-          ? [
-              { audio: { deviceId: { exact: micId } }, video: false },
-              { audio: { deviceId: { ideal: micId } }, video: false },
-              { audio: true, video: false },
-            ]
-          : [{ audio: true, video: false }];
-        let gotMic = null;
-        for (const c of micAttempts) {
-          try {
-            gotMic = await navigator.mediaDevices.getUserMedia(c);
-            break;
-          } catch (_) {}
-        }
-        if (!gotMic) throw new Error('Microphone unavailable');
-        micStream = gotMic;
+        const exclude = await getExcludedMicDeviceIds();
+        micStream = await openMicStream($('micSelect').value || null, exclude);
         micStream.getAudioTracks().forEach(t => audioTracks.push(t));
       } catch (e) {
         console.warn('Mic not available:', e);
@@ -1180,6 +1179,7 @@ async function startRecording() {
       const mixedAudio = await mixAudioTracks(audioTracks);
       mixedAudio.forEach(t => tracks.push(t));
       mixedStream = new MediaStream(tracks);
+      await resumeAudioContexts();
     } catch (composeErr) {
       console.warn('Compositor recording failed, using direct stream:', composeErr);
       usedCompositor = false;
@@ -1187,6 +1187,7 @@ async function startRecording() {
       const mixedAudio = await mixAudioTracks(audioTracks);
       mixedAudio.forEach(t => tracks.push(t));
       mixedStream = new MediaStream(tracks);
+      await resumeAudioContexts();
     }
 
     const { recorder, mimeType } = createRecorder(mixedStream, getVideoBitrate());
@@ -1404,6 +1405,7 @@ exportManualNotes?.addEventListener('input', updateExportPreview);
 $('exportCancel')?.addEventListener('click', hideExportModal);
 
 function cleanup() {
+  stopHdmiAudioMonitor();
   compositor?.stop();
   closeWebcamDocumentPiP();
   skipWebcamPip = false;
