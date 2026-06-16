@@ -12,6 +12,22 @@ import {
 } from './plan-export.js';
 import { loadSessionBackground } from './webcam-bg.js';
 import { resetSession } from './session.js';
+import {
+  isIOS,
+  isSafari,
+  supportsDisplayCapture,
+  supportsMediaRecorderPause,
+  prepareVideoElement,
+  playVideo,
+  waitForVideoFrame,
+  mixAudioTracks,
+  getUserMediaVideo,
+  getDisplayMediaOptions,
+  createRecorder,
+  canvasCaptureFps,
+  mimeToExtension,
+  requestVideoPermission,
+} from './platform.js';
 
 const $ = id => document.getElementById(id);
 
@@ -32,6 +48,8 @@ let compositor     = null;
 let pendingExport  = null;
 let captureCardStream = null;
 let docPipWindow   = null;
+let skipWebcamPip  = false;
+let recordMimeType = '';
 
 // Session-only (wiped after export — never persisted)
 let sessionBgImage = null;
@@ -39,14 +57,9 @@ let sessionBgUrl   = null;
 
 // Hidden capture elements (compositor sources)
 const screenCapture = document.createElement('video');
-screenCapture.muted = true;
-screenCapture.playsInline = true;
 const webcamCapture = document.createElement('video');
-webcamCapture.muted = true;
-webcamCapture.playsInline = true;
 const captureCardCapture = document.createElement('video');
-captureCardCapture.muted = true;
-captureCardCapture.playsInline = true;
+[screenCapture, webcamCapture, captureCardCapture].forEach(prepareVideoElement);
 const composeCanvas = $('composeCanvas');
 
 // ── DOM refs ───────────────────────────────────────
@@ -76,6 +89,8 @@ const bgImageRow     = $('bgImageRow');
 const blurAmountRow  = $('blurAmountRow');
 const bgImageInput   = $('bgImageInput');
 
+[screenPreview, webcamPip, captureCardPip].forEach(prepareVideoElement);
+
 compositor = createCompositor({
   screenVideo: screenCapture,
   captureCardVideo: captureCardCapture,
@@ -94,15 +109,25 @@ function canMigrateWebcam() {
 // ── Init: enumerate devices ────────────────────────
 async function enumerateDevices() {
   try {
-    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-      .catch(() => null);
-    if (tmp) tmp.getTracks().forEach(t => t.stop());
+    if (isIOS || isSafari) {
+      await requestVideoPermission();
+    } else {
+      const tmp = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+        .catch(() => navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null));
+      if (tmp) tmp.getTracks().forEach(t => t.stop());
+    }
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     const mics = devices.filter(d => d.kind === 'audioinput');
     const cams = devices.filter(d => d.kind === 'videoinput');
     const micSel = $('micSelect');
     const camSel = $('camSelect');
+    const capSel = $('captureCardSelect');
+
+    [micSel, camSel, capSel].forEach(sel => {
+      if (!sel) return;
+      while (sel.options.length > 1) sel.remove(1);
+    });
 
     mics.forEach((mic, i) => {
       const opt = document.createElement('option');
@@ -118,7 +143,6 @@ async function enumerateDevices() {
       camSel.appendChild(opt);
     });
 
-    const capSel = $('captureCardSelect');
     if (capSel) {
       cams.forEach((cam, i) => {
         const opt = document.createElement('option');
@@ -133,6 +157,7 @@ async function enumerateDevices() {
 }
 
 enumerateDevices();
+navigator.mediaDevices?.addEventListener?.('devicechange', enumerateDevices);
 
 // ── Capture source + tab migrate hint ───────────────
 document.querySelectorAll('input[name="source"]').forEach(r => {
@@ -180,33 +205,32 @@ async function ensureCaptureCardStream() {
   if (captureCardStream) return captureCardStream;
   const devId = $('captureCardSelect')?.value;
   if (!devId) throw new Error('Select a capture card device first.');
-  captureCardStream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      deviceId: { exact: devId },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      frameRate: { ideal: 60 },
-    },
-    audio: false,
-  });
+  captureCardStream = await getUserMediaVideo(devId, { audio: false });
   return captureCardStream;
+}
+
+async function attachCaptureCardPreview(stream) {
+  captureCardPip.srcObject = stream;
+  captureCardCapture.srcObject = stream;
+  await playVideo(captureCardCapture);
+  captureCardPip.classList.remove('hidden');
+  applyCaptureCardPos(captureCardPos);
+  applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '280', 10));
+  compositor.setCaptureEnabled(true);
+  syncCompositorCapturePip();
+  previewIdle?.classList.add('hidden');
 }
 
 async function startCaptureCardPreview() {
   try {
     await ensureCaptureCardStream();
-    captureCardPip.srcObject = captureCardStream;
-    captureCardCapture.srcObject = captureCardStream;
-    await captureCardCapture.play().catch(() => {});
-    captureCardPip.classList.remove('hidden');
-    applyCaptureCardPos(captureCardPos);
-    applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '280', 10));
-    compositor.setCaptureEnabled(true);
-    syncCompositorCapturePip();
-    previewIdle?.classList.add('hidden');
+    await attachCaptureCardPreview(captureCardStream);
     setStatus('ready', 'Ready');
   } catch (e) {
-    alert('Could not access capture card: ' + e.message);
+    const hint = (isIOS || isSafari)
+      ? ' On iPhone, pick the external/HDMI camera after allowing camera access.'
+      : '';
+    alert('Could not access capture card: ' + e.message + hint);
     captureCardToggle.checked = false;
     captureCardOptions?.classList.add('hidden');
   }
@@ -341,10 +365,7 @@ $('camSelect').addEventListener('change', async () => {
 async function ensureWebcamStream() {
   if (webcamStream) return webcamStream;
   const camId = $('camSelect').value;
-  webcamStream = await navigator.mediaDevices.getUserMedia({
-    video: camId ? { deviceId: { exact: camId } } : true,
-    audio: false,
-  });
+  webcamStream = await getUserMediaVideo(camId || null, { audio: false });
   return webcamStream;
 }
 
@@ -352,7 +373,7 @@ async function startWebcamPreview() {
   try {
     await ensureWebcamStream();
     webcamCapture.srcObject = webcamStream;
-    await webcamCapture.play().catch(() => {});
+    await playVideo(webcamCapture);
     await syncWebcamPresentation();
     applyWebcamSize(parseInt(camSizeSlider.value));
     syncCompositorPip();
@@ -434,7 +455,7 @@ function stopWebcamPreview() {
   webcamPip.classList.add('hidden');
 }
 
-document.querySelectorAll('.pos-btn').forEach(btn => {
+document.querySelectorAll('#webcamOptions .position-buttons .pos-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
@@ -479,6 +500,43 @@ function startDrag(e, el) {
 
 webcamPip.addEventListener('mousedown', e => startDrag(e, webcamPip));
 captureCardPip?.addEventListener('mousedown', e => startDrag(e, captureCardPip));
+webcamPip.addEventListener('touchstart', e => startTouchDrag(e, webcamPip), { passive: false });
+captureCardPip?.addEventListener('touchstart', e => startTouchDrag(e, captureCardPip), { passive: false });
+
+function startTouchDrag(e, el) {
+  if (!e.touches?.[0]) return;
+  const t = e.touches[0];
+  startDrag({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() }, el);
+}
+
+document.addEventListener('touchmove', e => {
+  if (!dragging || !dragTarget || !e.touches?.[0]) return;
+  const t = e.touches[0];
+  e.preventDefault();
+  const container = previewContainer.getBoundingClientRect();
+  let x = t.clientX - container.left - dragOffX;
+  let y = t.clientY - container.top  - dragOffY;
+  const w = parseInt(dragTarget.style.width, 10) || dragTarget.offsetWidth || 160;
+  const h = parseInt(dragTarget.style.height, 10) || dragTarget.offsetHeight || 160;
+  x = Math.max(0, Math.min(x, container.width  - w));
+  y = Math.max(0, Math.min(y, container.height - h));
+  dragTarget.style.left   = x + 'px';
+  dragTarget.style.top    = y + 'px';
+  dragTarget.style.right  = 'auto';
+  dragTarget.style.bottom = 'auto';
+  if (dragTarget === webcamPip) syncCompositorPip();
+  else syncCompositorCapturePip();
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  if (dragging) {
+    dragging = false;
+    if (dragTarget) dragTarget.style.transition = '';
+    dragTarget = null;
+    syncCompositorPip();
+    syncCompositorCapturePip();
+  }
+});
 
 document.addEventListener('mousemove', e => {
   if (!dragging || !dragTarget) return;
@@ -658,7 +716,7 @@ recordBtn.addEventListener('click', () => {
 });
 
 pauseBtn.addEventListener('click', () => {
-  if (!mediaRecorder) return;
+  if (!mediaRecorder || !supportsMediaRecorderPause()) return;
   if (mediaRecorder.state === 'recording') {
     mediaRecorder.pause();
     pauseStart = Date.now();
@@ -672,24 +730,59 @@ pauseBtn.addEventListener('click', () => {
   }
 });
 
+async function acquireMainVideoStream(sourceValue) {
+  const wantSystemAudio = $('systemAudio').checked;
+
+  if (supportsDisplayCapture()) {
+    try {
+      return {
+        stream: await navigator.mediaDevices.getDisplayMedia(
+          getDisplayMediaOptions(sourceValue, wantSystemAudio),
+        ),
+        role: 'display',
+      };
+    } catch (e) {
+      if (e.name === 'NotAllowedError') throw e;
+      console.warn('Display capture unavailable, trying camera fallback:', e);
+    }
+  }
+
+  if (captureCardToggle?.checked && $('captureCardSelect')?.value) {
+    const stream = await getUserMediaVideo($('captureCardSelect').value, { audio: false });
+    return { stream, role: 'capturecard' };
+  }
+
+  if (webcamToggle.checked) {
+    if (!webcamStream) await ensureWebcamStream();
+    return { stream: new MediaStream(webcamStream.getVideoTracks()), role: 'webcam' };
+  }
+
+  if (isIOS || isSafari) {
+    throw new Error(
+      'Screen capture is limited in Safari. Enable Webcam or Capture Card, or use Chrome/Edge on desktop for screen recording.',
+    );
+  }
+  throw new Error('Screen capture is not available in this browser.');
+}
+
 async function startRecording() {
   try {
     recordedChunks = [];
+    recordMimeType = '';
+    skipWebcamPip = false;
     syncCompositorBackground();
 
     const sourceValue = document.querySelector('input[name="source"]:checked').value;
     const audioTracks = [];
     const wantCaptureCard = captureCardToggle?.checked;
 
-    const captureOpts = {
-      video: { cursor: 'always' },
-      audio: $('systemAudio').checked,
-    };
-    if (sourceValue === 'tab') captureOpts.preferCurrentTab = true;
-    screenStream = await navigator.mediaDevices.getDisplayMedia(captureOpts);
+    const main = await acquireMainVideoStream(sourceValue);
+    screenStream = main.stream;
+    skipWebcamPip = main.role === 'webcam';
+
     screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
 
-    if (wantCaptureCard) {
+    if (wantCaptureCard && main.role !== 'capturecard') {
       const devId = $('captureCardSelect')?.value;
       if (!devId) {
         alert('Select a capture card / HDMI device first.');
@@ -702,36 +795,39 @@ async function startRecording() {
         captureCardStream.getTracks().forEach(t => t.stop());
         captureCardStream = null;
       }
-      captureCardStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: { exact: devId },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 60 },
-        },
-        audio: wantCapAudio,
-      });
+      captureCardStream = await getUserMediaVideo(devId, { audio: wantCapAudio });
       if (wantCapAudio) {
         captureCardStream.getAudioTracks().forEach(t => audioTracks.push(t));
       }
       const capVideo = new MediaStream(captureCardStream.getVideoTracks());
-      captureCardCapture.srcObject = capVideo;
-      await captureCardCapture.play().catch(() => {});
-      captureCardPip.srcObject = capVideo;
-      captureCardPip.classList.remove('hidden');
-      compositor.setCaptureEnabled(true);
-      syncCompositorCapturePip();
-    } else {
+      await attachCaptureCardPreview(capVideo);
+    } else if (main.role === 'capturecard') {
+      captureCardStream = screenStream;
+      compositor.setCaptureEnabled(false);
+      skipWebcamPip = false;
+    } else if (!wantCaptureCard) {
       compositor.setCaptureEnabled(false);
     }
 
     if (micAudioChk.checked) {
       try {
         const micId = $('micSelect').value;
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: micId ? { deviceId: { exact: micId } } : true,
-          video: false,
-        });
+        const micAttempts = micId
+          ? [
+              { audio: { deviceId: { exact: micId } }, video: false },
+              { audio: { deviceId: { ideal: micId } }, video: false },
+              { audio: true, video: false },
+            ]
+          : [{ audio: true, video: false }];
+        let gotMic = null;
+        for (const c of micAttempts) {
+          try {
+            gotMic = await navigator.mediaDevices.getUserMedia(c);
+            break;
+          } catch (_) {}
+        }
+        if (!gotMic) throw new Error('Microphone unavailable');
+        micStream = gotMic;
         micStream.getAudioTracks().forEach(t => audioTracks.push(t));
       } catch (e) {
         console.warn('Mic not available:', e);
@@ -747,49 +843,42 @@ async function startRecording() {
       return startRecording();
     }
 
-    // Screen video for compositor (not raw mixed stream)
     const screenVideoOnly = new MediaStream(screenStream.getVideoTracks());
     screenCapture.srcObject = screenVideoOnly;
-    await screenCapture.play();
+    await playVideo(screenCapture);
+    await waitForVideoFrame(screenCapture);
 
-    if (webcamToggle.checked) {
+    if (webcamToggle.checked && !skipWebcamPip) {
       if (!webcamStream) await startWebcamPreview();
       webcamCapture.srcObject = webcamStream;
-      await webcamCapture.play().catch(() => {});
+      await playVideo(webcamCapture);
+      await waitForVideoFrame(webcamCapture);
       await syncWebcamPresentation();
       syncCompositorPip();
     }
 
     compositor.start();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    const canvasStream = composeCanvas.captureStream(30);
-    const tracks = [...canvasStream.getVideoTracks()];
-
-    if (audioTracks.length > 0) {
-      if (audioTracks.length === 1) {
-        tracks.push(audioTracks[0]);
-      } else {
-        const ctx  = new AudioContext();
-        const dest = ctx.createMediaStreamDestination();
-        audioTracks.forEach(t => {
-          ctx.createMediaStreamSource(new MediaStream([t])).connect(dest);
-        });
-        dest.stream.getAudioTracks().forEach(t => tracks.push(t));
-      }
+    let usedCompositor = true;
+    try {
+      const canvasStream = composeCanvas.captureStream(canvasCaptureFps());
+      const tracks = [...canvasStream.getVideoTracks()];
+      const mixedAudio = await mixAudioTracks(audioTracks);
+      mixedAudio.forEach(t => tracks.push(t));
+      mixedStream = new MediaStream(tracks);
+    } catch (composeErr) {
+      console.warn('Compositor recording failed, using direct stream:', composeErr);
+      usedCompositor = false;
+      const tracks = [...screenStream.getVideoTracks()];
+      const mixedAudio = await mixAudioTracks(audioTracks);
+      mixedAudio.forEach(t => tracks.push(t));
+      mixedStream = new MediaStream(tracks);
     }
 
-    mixedStream = new MediaStream(tracks);
-
-    // Preview shows composited canvas (webcam + captions appear on shared content)
-    screenPreview.classList.remove('active');
-    composeCanvas.classList.remove('hidden');
-    previewIdle.classList.add('hidden');
-
-    const mimeType = getSupportedMime();
-    mediaRecorder = new MediaRecorder(mixedStream, {
-      mimeType,
-      videoBitsPerSecond: getVideoBitrate(),
-    });
+    const { recorder, mimeType } = createRecorder(mixedStream, getVideoBitrate());
+    mediaRecorder = recorder;
+    recordMimeType = mimeType;
 
     mediaRecorder.ondataavailable = e => {
       if (e.data && e.data.size > 0) recordedChunks.push(e.data);
@@ -804,9 +893,21 @@ async function startRecording() {
     setStatus('recording', 'Recording');
     recordBtn.innerHTML = `<span class="btn-record-dot"></span> Stop Recording`;
     recordBtn.classList.add('recording');
-    pauseBtn.disabled = false;
+    pauseBtn.disabled = !supportsMediaRecorderPause();
 
-    screenStream.getVideoTracks()[0].onended = stopRecording;
+    screenPreview.classList.remove('active');
+    if (usedCompositor) {
+      composeCanvas.classList.remove('hidden');
+    } else {
+      composeCanvas.classList.add('hidden');
+      screenPreview.srcObject = mixedStream;
+      screenPreview.classList.add('active');
+      await playVideo(screenPreview);
+    }
+    previewIdle.classList.add('hidden');
+
+    const mainTrack = screenStream.getVideoTracks()[0];
+    if (mainTrack) mainTrack.onended = stopRecording;
   } catch (e) {
     console.error('Recording failed:', e);
     if (e.name !== 'NotAllowedError') alert('Could not start recording: ' + e.message);
@@ -829,8 +930,8 @@ function stopRecording() {
 function saveRecording() {
   if (recordedChunks.length === 0) { cleanup(); return; }
 
-  const mimeType = getSupportedMime();
-  const ext      = mimeType.includes('mp4') ? 'mp4' : 'webm';
+  const mimeType = recordMimeType || mediaRecorder?.mimeType || 'video/mp4';
+  const ext      = mimeToExtension(mimeType);
   const blob     = new Blob(recordedChunks, { type: mimeType });
   const basename = `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
   const durationMs = startTime ? recordingClock() : 0;
@@ -919,6 +1020,8 @@ exportModal?.addEventListener('click', e => {
 function cleanup() {
   compositor?.stop();
   closeWebcamDocumentPiP();
+  skipWebcamPip = false;
+  recordMimeType = '';
   if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
   if (captureCardStream) { captureCardStream.getTracks().forEach(t => t.stop()); captureCardStream = null; }
   if (micStream)    { micStream.getTracks().forEach(t => t.stop());    micStream    = null; }
@@ -966,23 +1069,19 @@ function setStatus(state, text) {
   statusText.textContent = text;
 }
 
-function getSupportedMime() {
-  const types = [
-    'video/mp4;codecs=h264,aac',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ];
-  for (const t of types) {
-    if (MediaRecorder.isTypeSupported(t)) return t;
-  }
-  return 'video/webm';
-}
-
 function getVideoBitrate() {
   const q = document.querySelector('input[name="quality"]:checked').value;
+  if (isIOS) return q === '4k' ? 6_000_000 : q === '1080' ? 4_000_000 : 2_500_000;
   return q === '4k' ? 20_000_000 : q === '1080' ? 8_000_000 : 4_000_000;
+}
+
+if (!supportsMediaRecorderPause()) pauseBtn.disabled = true;
+if ((isIOS || isSafari) && tabMigrateNote) {
+  tabMigrateNote.textContent = 'Safari/iOS: screen capture is limited — enable Webcam or Capture Card. Webcam PiP stays in-page on mobile.';
+}
+if ((isIOS || isSafari) && !supportsDisplayCapture()) {
+  const note = $('safariNote');
+  if (note) note.classList.remove('hidden');
 }
 
 setStatus('', 'Ready');

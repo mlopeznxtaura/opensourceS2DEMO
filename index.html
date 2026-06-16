@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260616-fix" />
+  <link rel="stylesheet" href="css/style.css?v=260617-safari" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260616-fix</span>
+        <span class="build-badge" title="Deployed build">build 260617-safari</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -81,7 +81,7 @@
                   <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </label>
               </div>
-              <p class="caption-note">Layers on top of your screen/tab capture — use with webcam for gaming commentary.</p>
+              <p class="caption-note">Layers on top of your screen/tab capture — use with webcam for gaming commentary. On iPhone, external cameras appear after you allow camera access.</p>
             </div>
             <div class="position-grid">
               <span class="position-label">Card position</span>
@@ -210,6 +210,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
             Pause
           </button>
+          <p class="caption-note hidden" id="safariNote">Safari/iOS: use Webcam or Capture Card if screen share fails. Pause may be unavailable on mobile.</p>
         </div>
 
       </aside>
@@ -217,10 +218,10 @@
       <!-- Center: Preview -->
       <div class="preview-area">
         <div class="preview-container" id="previewContainer">
-          <video id="screenPreview" autoplay muted playsinline></video>
+          <video id="screenPreview" autoplay muted playsinline webkit-playsinline></video>
           <canvas id="composeCanvas" class="compose-canvas hidden"></canvas>
-          <video id="captureCardPip" autoplay muted playsinline class="capture-pip hidden"></video>
-          <video id="webcamPip" autoplay muted playsinline class="webcam-pip hidden"></video>
+          <video id="captureCardPip" autoplay muted playsinline webkit-playsinline class="capture-pip hidden"></video>
+          <video id="webcamPip" autoplay muted playsinline webkit-playsinline class="webcam-pip hidden"></video>
           <div id="liveCaption" class="live-caption hidden"></div>
           <div class="preview-idle" id="previewIdle">
             <div class="idle-icon">
@@ -266,6 +267,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260616-fix"></script>
+  <script type="module" src="js/app.js?v=260617-safari"></script>
 </body>
 </html>
