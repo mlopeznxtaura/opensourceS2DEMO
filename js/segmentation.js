@@ -1,17 +1,13 @@
 /*
- * Virtual background — BodyPix drawBokehEffect (person sharp, room blurred/replaced).
- * Models served from /vendor/ on same origin (no CDN dependency).
+ * Virtual background — BodyPix drawBokehEffect (you sharp, room blurred/replaced).
+ * Uses UMD scripts from /vendor/ (see index.html).
  */
 
-const TF_URL = '/vendor/tfjs/tf.esm.js';
-const BODYPIX_URL = '/vendor/body-pix/body-pix.esm.js';
 const PROCESS_SIZE = 384;
 const TEMPORAL_BLEND = 0.42;
 const SEG_INTERVAL_MS = 66;
 
 let net = null;
-let bodyPixApi = null;
-let netInit = null;
 let outputCanvas = null;
 let smoothFloat = null;
 let smoothU8 = null;
@@ -28,6 +24,18 @@ const segOptions = {
   bgImage: null,
   blurPx: 14,
 };
+
+function bodyPixApi() {
+  return globalThis['body-pix'] || globalThis.bodyPix;
+}
+
+function tfApi() {
+  return globalThis.tf;
+}
+
+function libsLoaded() {
+  return !!(tfApi() && bodyPixApi());
+}
 
 export function isSegmentationMaskReady() {
   return compositorReady && !!outputCanvas;
@@ -54,9 +62,7 @@ export function setSegmentationOptions(opts = {}) {
 }
 
 function ensureOutputCanvas() {
-  if (!outputCanvas) {
-    outputCanvas = document.createElement('canvas');
-  }
+  if (!outputCanvas) outputCanvas = document.createElement('canvas');
   if (outputCanvas.width !== PROCESS_SIZE) {
     outputCanvas.width = PROCESS_SIZE;
     outputCanvas.height = PROCESS_SIZE;
@@ -81,7 +87,8 @@ function buildSmoothedSegmentation(seg) {
 }
 
 async function renderFrame(video) {
-  if (!net || !bodyPixApi || !video?.videoWidth) return;
+  const bodyPix = bodyPixApi();
+  if (!net || !bodyPix || !video?.videoWidth) return;
   ensureOutputCanvas();
 
   const segmentation = await net.segmentPerson(video, {
@@ -95,7 +102,7 @@ async function renderFrame(video) {
   const blur = Math.min(22, Math.max(8, segOptions.blurPx));
 
   if (segOptions.mode === 'image' && segOptions.bgImage?.complete) {
-    await bodyPixApi.drawBokehEffect(
+    await bodyPix.drawBokehEffect(
       outputCanvas,
       video,
       0,
@@ -106,7 +113,7 @@ async function renderFrame(video) {
       { image: segOptions.bgImage },
     );
   } else {
-    await bodyPixApi.drawBokehEffect(
+    await bodyPix.drawBokehEffect(
       outputCanvas,
       video,
       blur,
@@ -123,29 +130,28 @@ async function renderFrame(video) {
 
 async function ensureModel() {
   if (net) return net;
-  if (netInit) return netInit;
+  if (!libsLoaded()) {
+    throw new Error('AI libraries missing — hard refresh the page');
+  }
+  const tf = tfApi();
+  const bodyPix = bodyPixApi();
   segStatus = 'Loading background AI…';
   segError = '';
-  netInit = (async () => {
-    const tf = await import(TF_URL);
-    try {
-      await tf.setBackend('webgl');
-      await tf.ready();
-    } catch (_) {
-      await tf.setBackend('cpu');
-      await tf.ready();
-    }
-    bodyPixApi = await import(BODYPIX_URL);
-    net = await bodyPixApi.load({
-      architecture: 'MobileNetV1',
-      outputStride: 16,
-      multiplier: 0.75,
-      quantBytes: 2,
-    });
-    segStatus = 'Tracking you…';
-    return net;
-  })();
-  return netInit;
+  try {
+    await tf.setBackend('webgl');
+    await tf.ready();
+  } catch (_) {
+    await tf.setBackend('cpu');
+    await tf.ready();
+  }
+  net = await bodyPix.load({
+    architecture: 'MobileNetV1',
+    outputStride: 16,
+    multiplier: 0.75,
+    quantBytes: 2,
+  });
+  segStatus = 'Tracking you…';
+  return net;
 }
 
 function runLoop() {
@@ -159,7 +165,7 @@ function runLoop() {
     .catch(err => {
       console.error('Virtual background frame:', err);
       segError = err.message || String(err);
-      segStatus = 'Background AI error — see console';
+      segStatus = 'Background AI error';
       compositorReady = false;
     })
     .finally(() => { frameBusy = false; });
@@ -202,7 +208,5 @@ export async function disposeSegmenter() {
     try { net.dispose(); } catch (_) {}
     net = null;
   }
-  bodyPixApi = null;
-  netInit = null;
   outputCanvas = null;
 }
