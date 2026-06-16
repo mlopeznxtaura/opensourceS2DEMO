@@ -700,16 +700,17 @@ html, body {
 
 .live-caption {
   position: absolute;
-  bottom: 16px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  max-width: 80%;
-  padding: 6px 14px;
-  border-radius: 6px;
+  max-width: 88%;
+  padding: 14px 22px;
+  border-radius: 10px;
   background: rgba(0, 0, 0, 0.75);
   color: #fff;
-  font-size: 14px;
-  line-height: 1.4;
+  font-size: 42px;
+  font-weight: 600;
+  line-height: 1.35;
   text-align: center;
   pointer-events: none;
   z-index: 20;

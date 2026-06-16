@@ -106,10 +106,10 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     }
 
     if (captionText) {
-      const pad = Math.max(12, vw * 0.012);
-      const fontSize = Math.max(16, Math.round(vh * 0.028));
+      const pad = Math.max(36, vw * 0.036);
+      const fontSize = Math.max(48, Math.round(vh * 0.084));
       ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
-      const maxW = vw * 0.82;
+      const maxW = vw * 0.88;
       const lines = wrapText(ctx, captionText, maxW);
       const lineH = fontSize * 1.35;
       const boxH = lines.length * lineH + pad * 2;
@@ -117,7 +117,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
       const boxX = (vw - maxW) / 2 - pad;
 
       ctx.fillStyle = 'rgba(0,0,0,0.72)';
-      roundRect(ctx, boxX, boxY, maxW + pad * 2, boxH, 8);
+      roundRect(ctx, boxX, boxY, maxW + pad * 2, boxH, 12);
       ctx.fill();
 
       ctx.fillStyle = '#fff';
