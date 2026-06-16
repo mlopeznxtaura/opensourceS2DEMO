@@ -193,3 +193,100 @@ export async function requestVideoPermission() {
     return false;
   }
 }
+
+/** HDMI capture cards usually expose audio on a sibling audioinput (same groupId / label). */
+export function findPairedAudioDevice(videoDeviceId, devices) {
+  const video = devices.find(d => d.deviceId === videoDeviceId && d.kind === 'videoinput');
+  if (!video) return null;
+
+  if (video.groupId) {
+    const mate = devices.find(
+      d => d.kind === 'audioinput' && d.groupId === video.groupId && d.deviceId,
+    );
+    if (mate) return mate;
+  }
+
+  const stem = video.label.split('(')[0].trim().toLowerCase();
+  if (stem.length > 2) {
+    const mate = devices.find(
+      d => d.kind === 'audioinput'
+        && d.deviceId
+        && d.label.toLowerCase().includes(stem),
+    );
+    if (mate) return mate;
+  }
+
+  return null;
+}
+
+function captureAudioConstraints(audioDeviceId) {
+  const processing = {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+  };
+  if (audioDeviceId) {
+    return { deviceId: { ideal: audioDeviceId }, ...processing };
+  }
+  return processing;
+}
+
+/**
+ * Open a capture-card / HDMI input. Binds HDMI audio to the capture hardware,
+ * not the default microphone (audio: true alone is wrong for Chromecast-in-HDMI).
+ */
+export async function getCaptureCardStream(videoDeviceId, { audio = false, audioDeviceId = null } = {}) {
+  if (!videoDeviceId) throw new Error('Select a capture card device first.');
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const paired = audio && !audioDeviceId
+    ? findPairedAudioDevice(videoDeviceId, devices)
+    : null;
+  const audioId = audioDeviceId || paired?.deviceId || null;
+  const audioC = audio ? captureAudioConstraints(audioId) : false;
+
+  const videoAttempts = [
+    { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+    { width: { ideal: 1280 }, height: { ideal: 720 } },
+    true,
+  ];
+
+  let lastErr;
+  for (const video of videoAttempts) {
+    const videoExact = video === true
+      ? { deviceId: { exact: videoDeviceId } }
+      : { deviceId: { exact: videoDeviceId }, ...video };
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: videoExact, audio: audioC });
+    } catch (err) {
+      lastErr = err;
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') throw err;
+    }
+    const videoIdeal = video === true
+      ? { deviceId: { ideal: videoDeviceId } }
+      : { deviceId: { ideal: videoDeviceId }, ...video };
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: videoIdeal, audio: audioC });
+    } catch (err) {
+      lastErr = err;
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') throw err;
+    }
+  }
+
+  if (audio) {
+    for (const video of videoAttempts) {
+      const videoIdeal = video === true
+        ? { deviceId: { ideal: videoDeviceId } }
+        : { deviceId: { ideal: videoDeviceId }, ...video };
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoIdeal, audio: false });
+        console.warn('Capture card video OK but HDMI audio unavailable:', lastErr);
+        return stream;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+  }
+
+  throw lastErr || new Error('Could not open capture card');
+}

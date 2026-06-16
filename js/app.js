@@ -28,6 +28,8 @@ import {
   canvasCaptureFps,
   mimeToExtension,
   requestVideoPermission,
+  getCaptureCardStream,
+  findPairedAudioDevice,
 } from './platform.js';
 
 const $ = id => document.getElementById(id);
@@ -134,6 +136,8 @@ async function enumerateDevices() {
       while (sel.options.length > 1) sel.remove(1);
     });
 
+    const capVideoId = $('captureCardSelect')?.value || '';
+
     mics.forEach((mic, i) => {
       const opt = document.createElement('option');
       opt.value = mic.deviceId;
@@ -142,6 +146,7 @@ async function enumerateDevices() {
     });
 
     cams.forEach((cam, i) => {
+      if (capVideoId && cam.deviceId === capVideoId) return;
       const opt = document.createElement('option');
       opt.value = cam.deviceId;
       opt.text  = cam.label || `Camera ${i + 1}`;
@@ -149,10 +154,12 @@ async function enumerateDevices() {
     });
 
     if (capSel) {
+      const camVideoId = $('camSelect')?.value || '';
       cams.forEach((cam, i) => {
+        if (camVideoId && cam.deviceId === camVideoId) return;
         const opt = document.createElement('option');
         opt.value = cam.deviceId;
-        opt.text  = cam.label || `Video input ${i + 1}`;
+        opt.text  = cam.label || `HDMI / capture ${i + 1}`;
         capSel.appendChild(opt);
       });
     }
@@ -175,15 +182,94 @@ document.querySelectorAll('input[name="source"]').forEach(r => {
 });
 
 // ── Capture card (additive overlay) ────────────────
+function wantCaptureCardAudio() {
+  return !!$('captureCardAudio')?.checked;
+}
+
+function setCaptureCardAudioStatus(msg) {
+  const el = $('captureCardAudioStatus');
+  if (el) el.textContent = msg || '';
+}
+
+async function refreshCaptureCardAudioList() {
+  const capSel = $('captureCardSelect');
+  const audioSel = $('captureCardAudioSelect');
+  if (!audioSel || !capSel) return;
+
+  const videoId = capSel.value;
+  while (audioSel.options.length > 1) audioSel.remove(1);
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const paired = videoId ? findPairedAudioDevice(videoId, devices) : null;
+
+  if (paired) {
+    const opt = document.createElement('option');
+    opt.value = paired.deviceId;
+    opt.text = `${paired.label || 'Paired HDMI audio'} (recommended)`;
+    audioSel.appendChild(opt);
+    if (!audioSel.value) audioSel.value = paired.deviceId;
+  }
+
+  devices.filter(d => d.kind === 'audioinput').forEach((mic, i) => {
+    if (paired && mic.deviceId === paired.deviceId) return;
+    const opt = document.createElement('option');
+    opt.value = mic.deviceId;
+    opt.text = mic.label || `Audio input ${i + 1}`;
+    audioSel.appendChild(opt);
+  });
+}
+
+function wireCaptureCardAudioMonitor(stream) {
+  const monitor = $('captureCardMonitor');
+  if (!monitor) return;
+  const tracks = stream?.getAudioTracks() || [];
+  if (tracks.length && wantCaptureCardAudio()) {
+    monitor.srcObject = new MediaStream(tracks);
+    monitor.muted = false;
+    monitor.volume = 1;
+    monitor.play().catch(() => {});
+    setCaptureCardAudioStatus(`HDMI audio live: ${tracks[0].label || 'capture input'}`);
+  } else {
+    monitor.srcObject = null;
+    if (wantCaptureCardAudio()) {
+      setCaptureCardAudioStatus('No HDMI audio track — try another HDMI audio input above.');
+    } else {
+      setCaptureCardAudioStatus('');
+    }
+  }
+}
+
 captureCardToggle?.addEventListener('change', async () => {
   const on = captureCardToggle.checked;
   captureCardOptions?.classList.toggle('hidden', !on);
-  if (on) await startCaptureCardPreview();
-  else stopCaptureCardPreview();
+  if (on) {
+    await refreshCaptureCardAudioList();
+    const devId = $('captureCardSelect')?.value;
+    if (devId) await startCaptureCardPreview();
+    else setCaptureCardAudioStatus('Select your HDMI capture device above.');
+  } else {
+    stopCaptureCardPreview();
+  }
 });
 
 $('captureCardSelect')?.addEventListener('change', async () => {
+  await refreshCaptureCardAudioList();
   if (captureCardToggle?.checked) {
+    stopCaptureCardPreview();
+    if ($('captureCardSelect')?.value) await startCaptureCardPreview();
+  }
+});
+
+$('captureCardAudio')?.addEventListener('change', async () => {
+  $('captureCardAudioRow')?.classList.toggle('hidden', !wantCaptureCardAudio());
+  if (captureCardToggle?.checked && $('captureCardSelect')?.value) {
+    stopCaptureCardPreview();
+    await startCaptureCardPreview();
+  }
+});
+
+$('captureCardAudioSelect')?.addEventListener('change', async () => {
+  if (captureCardToggle?.checked && $('captureCardSelect')?.value) {
     stopCaptureCardPreview();
     await startCaptureCardPreview();
   }
@@ -206,18 +292,28 @@ document.querySelectorAll('#capturePosButtons .pos-btn').forEach(btn => {
   });
 });
 
-async function ensureCaptureCardStream() {
-  if (captureCardStream) return captureCardStream;
+async function openCaptureCardStream() {
   const devId = $('captureCardSelect')?.value;
   if (!devId) throw new Error('Select a capture card device first.');
-  captureCardStream = await getUserMediaVideo(devId, { audio: false });
+  const audioDeviceId = $('captureCardAudioSelect')?.value || null;
+  return getCaptureCardStream(devId, {
+    audio: wantCaptureCardAudio(),
+    audioDeviceId,
+  });
+}
+
+async function ensureCaptureCardStream() {
+  if (captureCardStream) return captureCardStream;
+  captureCardStream = await openCaptureCardStream();
   return captureCardStream;
 }
 
 async function attachCaptureCardPreview(stream) {
-  captureCardPip.srcObject = stream;
-  captureCardCapture.srcObject = stream;
+  const videoOnly = new MediaStream(stream.getVideoTracks());
+  captureCardPip.srcObject = videoOnly;
+  captureCardCapture.srcObject = videoOnly;
   await playVideo(captureCardCapture);
+  wireCaptureCardAudioMonitor(stream);
   captureCardPip.classList.remove('hidden');
   applyCaptureCardPos(captureCardPos);
   applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '280', 10));
@@ -228,8 +324,8 @@ async function attachCaptureCardPreview(stream) {
 
 async function startCaptureCardPreview() {
   try {
-    await ensureCaptureCardStream();
-    await attachCaptureCardPreview(captureCardStream);
+    const stream = await ensureCaptureCardStream();
+    await attachCaptureCardPreview(stream);
     setStatus('ready', 'Ready');
   } catch (e) {
     const hint = (isIOS || isSafari)
@@ -238,10 +334,14 @@ async function startCaptureCardPreview() {
     alert('Could not access capture card: ' + e.message + hint);
     captureCardToggle.checked = false;
     captureCardOptions?.classList.add('hidden');
+    setCaptureCardAudioStatus('');
   }
 }
 
 function stopCaptureCardPreview() {
+  const monitor = $('captureCardMonitor');
+  if (monitor) monitor.srcObject = null;
+  setCaptureCardAudioStatus('');
   if (captureCardStream) {
     captureCardStream.getTracks().forEach(t => t.stop());
     captureCardStream = null;
@@ -807,7 +907,7 @@ async function acquireMainVideoStream(sourceValue) {
   }
 
   if (captureCardToggle?.checked && $('captureCardSelect')?.value) {
-    const stream = await getUserMediaVideo($('captureCardSelect').value, { audio: false });
+    const stream = await openCaptureCardStream();
     return { stream, role: 'capturecard' };
   }
 
@@ -849,19 +949,22 @@ async function startRecording() {
         screenStream = null;
         return;
       }
-      const wantCapAudio = $('captureCardAudio')?.checked;
+      const wantCapAudio = wantCaptureCardAudio();
       if (captureCardStream) {
         captureCardStream.getTracks().forEach(t => t.stop());
         captureCardStream = null;
       }
-      captureCardStream = await getUserMediaVideo(devId, { audio: wantCapAudio });
+      captureCardStream = await openCaptureCardStream();
       if (wantCapAudio) {
         captureCardStream.getAudioTracks().forEach(t => audioTracks.push(t));
       }
-      const capVideo = new MediaStream(captureCardStream.getVideoTracks());
-      await attachCaptureCardPreview(capVideo);
+      await attachCaptureCardPreview(captureCardStream);
     } else if (main.role === 'capturecard') {
       captureCardStream = screenStream;
+      if (wantCaptureCardAudio()) {
+        screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
+      }
+      wireCaptureCardAudioMonitor(screenStream);
       compositor.setCaptureEnabled(false);
       skipWebcamPip = false;
     } else if (!wantCaptureCard) {

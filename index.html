@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260617-cap3x-cam2x" />
+  <link rel="stylesheet" href="css/style.css?v=260617-hdmiaudio" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260617-cap3x-cam2x</span>
+        <span class="build-badge" title="Deployed build">build 260617-hdmiaudio</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -72,16 +72,23 @@
             <div class="capture-card-row" id="captureCardRow">
               <span class="position-label">Device</span>
               <select id="captureCardSelect" class="mic-select">
-                <option value="">Select capture card…</option>
+                <option value="">HDMI / capture card (Chromecast)…</option>
               </select>
               <div class="toggle-row" style="margin-top:8px">
-                <label class="toggle-label">Capture card audio</label>
+                <label class="toggle-label">Capture card audio (Chromecast / HDMI)</label>
                 <label class="toggle">
                   <input type="checkbox" id="captureCardAudio" checked />
                   <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </label>
               </div>
-              <p class="caption-note">Layers on top of your screen/tab capture — use with webcam for gaming commentary. On iPhone, external cameras appear after you allow camera access.</p>
+              <div class="mic-select-row" id="captureCardAudioRow">
+                <span class="position-label">HDMI audio input</span>
+                <select id="captureCardAudioSelect" class="mic-select">
+                  <option value="">Auto — paired with capture device</option>
+                </select>
+              </div>
+              <p class="caption-status" id="captureCardAudioStatus"></p>
+              <p class="caption-note">Webcam is a separate device for your face overlay. Pick the capture card here for Chromecast/HDMI video + sound.</p>
             </div>
             <div class="position-grid">
               <span class="position-label">Card position</span>
@@ -135,7 +142,7 @@
           <div class="webcam-options" id="webcamOptions">
             <div class="cam-select-row">
               <select id="camSelect" class="mic-select">
-                <option value="">Default Camera</option>
+                <option value="">Webcam (face overlay)…</option>
               </select>
             </div>
             <div class="position-grid">
@@ -292,6 +299,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260617-cap3x-cam2x"></script>
+  <script type="module" src="js/app.js?v=260617-hdmiaudio"></script>
+  <audio id="captureCardMonitor" class="hidden" playsinline></audio>
 </body>
 </html>
