@@ -4,20 +4,21 @@
  * @typedef {'none'|'blur'|'image'} BgMode
  */
 
-function squareVideoCrop(video) {
+function bufferScale(video, dim) {
   const vw = video.videoWidth || 640;
   const vh = video.videoHeight || 480;
   const side = Math.min(vw, vh);
-  return {
-    sx: (vw - side) / 2,
-    sy: (vh - side) / 2,
-    side,
-  };
+  return Math.min(2.5, Math.max(1.5, side / Math.max(dim, 1)));
 }
 
-function bufferScale(video, dim) {
-  const { side } = squareVideoCrop(video);
-  return Math.min(2.5, Math.max(1.5, side / Math.max(dim, 1)));
+/** Crop biased upward so the face sits in the middle of the PiP. */
+function faceVideoCrop(video) {
+  const vw = video.videoWidth || 640;
+  const vh = video.videoHeight || 480;
+  const side = Math.min(vw, vh);
+  const sx = (vw - side) / 2;
+  const sy = Math.max(0, (vh - side) * 0.22);
+  return { sx, sy, side: Math.min(side, vh - sy) };
 }
 
 /**
@@ -26,7 +27,7 @@ function bufferScale(video, dim) {
 export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
   const mode = opts.mode || 'none';
   const bgImage = opts.bgImage || null;
-  const blurPx = opts.blurPx ?? 14;
+  const blurPx = opts.blurPx ?? 16;
 
   const cx = x + dim / 2;
   const cy = y + dim / 2;
@@ -40,10 +41,10 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
 
   if (mode === 'image' && bgImage && bgImage.complete && bgImage.naturalWidth) {
     drawCover(ctx, bgImage, x, y, dim, dim);
-    drawForegroundOval(ctx, video, x, y, dim, 0.72);
+    drawFaceCutout(ctx, video, x, y, dim);
   } else if (mode === 'blur') {
-    drawBlurredBackground(ctx, video, x, y, dim, blurPx);
-    drawForegroundOval(ctx, video, x, y, dim, 0.7);
+    drawBlurredFill(ctx, video, x, y, dim, blurPx);
+    drawFaceCutout(ctx, video, x, y, dim);
   } else {
     drawSharpSquare(ctx, video, x, y, dim);
   }
@@ -58,21 +59,26 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
 }
 
 function drawSharpSquare(ctx, video, x, y, dim) {
-  const { sx, sy, side } = squareVideoCrop(video);
+  const { sx, sy, side } = faceVideoCrop(video);
   ctx.drawImage(video, sx, sy, side, side, x, y, dim, dim);
 }
 
-function drawBlurredBackground(ctx, video, x, y, dim, blurPx) {
+/** Entire circle — only blurred pixels, no sharp room visible. */
+function drawBlurredFill(ctx, video, x, y, dim, blurPx) {
   const scale = bufferScale(video, dim);
   const buf = Math.round(dim * scale);
   const off = document.createElement('canvas');
   off.width = buf;
   off.height = buf;
   const octx = off.getContext('2d');
-  const { sx, sy, side } = squareVideoCrop(video);
-  const blurAmt = Math.max(6, blurPx * (buf / dim) * 0.55);
-  octx.filter = `blur(${blurAmt}px) saturate(1.08)`;
-  octx.drawImage(video, sx, sy, side, side, 0, 0, buf, buf);
+  const { sx, sy, side } = faceVideoCrop(video);
+  const zoom = 1.25;
+  const z = side * zoom;
+  const zx = sx - (z - side) / 2;
+  const zy = sy - (z - side) * 0.35;
+  const blurAmt = Math.max(12, blurPx * (buf / dim) * 0.85);
+  octx.filter = `blur(${blurAmt}px) saturate(1.05)`;
+  octx.drawImage(video, zx, zy, z, z, 0, 0, buf, buf);
   octx.filter = 'none';
   ctx.drawImage(off, x, y, dim, dim);
 }
@@ -95,11 +101,20 @@ function drawCover(ctx, img, x, y, w, h) {
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-/** Soft oval cutout — center stays sharp (portrait-style without ML). */
-function drawForegroundOval(ctx, video, x, y, dim, ovalScale) {
+/** Small sharp face island — hard edge, no soft ring exposing the room. */
+function drawFaceCutout(ctx, video, x, y, dim) {
+  const faceCx = x + dim / 2;
+  const faceCy = y + dim / 2 - dim * 0.05;
+  const rx = dim * 0.2;
+  const ry = dim * 0.24;
+
   const scale = bufferScale(video, dim);
   const bufSize = Math.round(dim * scale);
-  const { sx, sy, side } = squareVideoCrop(video);
+  const { sx, sy, side } = faceVideoCrop(video);
+  const zoom = 1.22;
+  const z = side / zoom;
+  const zx = sx + (side - z) / 2;
+  const zy = sy + (side - z) * 0.15;
 
   const off = document.createElement('canvas');
   off.width = bufSize;
@@ -107,32 +122,16 @@ function drawForegroundOval(ctx, video, x, y, dim, ovalScale) {
   const octx = off.getContext('2d');
   octx.imageSmoothingEnabled = true;
   octx.imageSmoothingQuality = 'high';
-  octx.drawImage(video, sx, sy, side, side, 0, 0, bufSize, bufSize);
+  octx.drawImage(video, zx, zy, z, z, 0, 0, bufSize, bufSize);
 
-  const mask = document.createElement('canvas');
-  mask.width = bufSize;
-  mask.height = bufSize;
-  const mctx = mask.getContext('2d');
-  const rw = (bufSize / 2) * ovalScale;
-  const rh = (bufSize / 2) * ovalScale * 1.05;
-  const grad = mctx.createRadialGradient(
-    bufSize / 2, bufSize / 2, bufSize * 0.1,
-    bufSize / 2, bufSize / 2, bufSize * 0.5,
-  );
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.5, 'rgba(255,255,255,0.9)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  mctx.fillStyle = grad;
-  mctx.beginPath();
-  mctx.ellipse(bufSize / 2, bufSize / 2, rw, rh, 0, 0, Math.PI * 2);
-  mctx.fill();
-
-  octx.globalCompositeOperation = 'destination-in';
-  octx.drawImage(mask, 0, 0);
-
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(faceCx, faceCy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.clip();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(off, x, y, dim, dim);
+  ctx.restore();
 }
 
 export function loadSessionBackground(file) {
