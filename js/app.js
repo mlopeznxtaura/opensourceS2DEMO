@@ -29,7 +29,6 @@ import {
   mimeToExtension,
   requestVideoPermission,
   getCaptureCardStream,
-  findPairedAudioDevice,
 } from './platform.js';
 
 const $ = id => document.getElementById(id);
@@ -52,6 +51,7 @@ let pendingExport  = null;
 let captureCardStream = null;
 let activeCaptureDeviceId = null;
 let activeWebcamDeviceId = null;
+let livePreviewActive = false;
 let docPipWindow   = null;
 let skipWebcamPip  = false;
 let recordMimeType = '';
@@ -105,6 +105,100 @@ compositor = createCompositor({
   captureCardVideo: captureCardCapture,
   webcamVideo: webcamCapture,
   canvas: composeCanvas,
+});
+
+function isRecordingActive() {
+  return mediaRecorder && mediaRecorder.state !== 'inactive';
+}
+
+function hasScreenVideoForPreview() {
+  return !!(screenStream && screenCapture.srcObject && screenCapture.videoWidth > 0);
+}
+
+function isCaptureMainPreview() {
+  return !!(captureCardToggle?.checked && captureCardCapture.srcObject && !hasScreenVideoForPreview());
+}
+
+function shouldRunLivePreview() {
+  if (isRecordingActive()) return false;
+  const capOn = captureCardToggle?.checked && captureCardCapture.srcObject;
+  const camOn = webcamToggle.checked && webcamCapture.srcObject;
+  return !!(capOn || camOn);
+}
+
+function syncLivePreviewLayout() {
+  const captureMain = isCaptureMainPreview();
+  compositor.setCaptureAsMain(captureMain);
+  compositor.setCaptureEnabled(!!(captureCardToggle?.checked && captureCardCapture.srcObject && !captureMain));
+}
+
+function updatePreviewDomVisibility() {
+  const live = livePreviewActive && shouldRunLivePreview();
+  const captureMain = isCaptureMainPreview();
+  const bgMode = getBgMode();
+
+  if (live) {
+    captureCardPip.classList.toggle('hidden', captureMain);
+    captureCardPip.classList.toggle('pip-ghost', !captureMain);
+    webcamPip.classList.toggle('pip-ghost', bgMode !== 'none');
+    if (webcamToggle.checked) webcamPip.classList.remove('hidden');
+  } else {
+    captureCardPip.classList.remove('pip-ghost');
+    webcamPip.classList.remove('pip-ghost');
+  }
+}
+
+function startLivePreview() {
+  if (!shouldRunLivePreview()) return;
+  syncLivePreviewLayout();
+  syncCompositorBackground();
+  syncCompositorCapturePip();
+  syncCompositorPip();
+  composeCanvas.classList.remove('hidden');
+  previewIdle?.classList.add('hidden');
+  livePreviewActive = true;
+  updatePreviewDomVisibility();
+  compositor.start();
+}
+
+function stopLivePreview() {
+  if (isRecordingActive()) return;
+  compositor.stop();
+  composeCanvas.classList.add('hidden');
+  livePreviewActive = false;
+  captureCardPip.classList.remove('pip-ghost');
+  webcamPip.classList.remove('pip-ghost');
+  if (!captureCardToggle?.checked) captureCardPip.classList.add('hidden');
+  if (!webcamToggle.checked) webcamPip.classList.add('hidden');
+  if (!captureCardToggle?.checked && !webcamToggle.checked) previewIdle?.classList.remove('hidden');
+}
+
+function refreshLivePreview() {
+  if (isRecordingActive()) {
+    syncLivePreviewLayout();
+    updatePreviewDomVisibility();
+    return;
+  }
+  if (shouldRunLivePreview()) startLivePreview();
+  else stopLivePreview();
+}
+
+function updateCaptureSizeSliderMax() {
+  if (!captureCardSizeSlider || !previewContainer) return;
+  const w = previewContainer.clientWidth || 800;
+  captureCardSizeSlider.max = String(Math.max(560, Math.round(w * 0.92)));
+}
+
+updateCaptureSizeSliderMax();
+window.addEventListener('resize', updateCaptureSizeSliderMax);
+
+$('previewFullscreenBtn')?.addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await previewContainer.requestFullscreen();
+  } catch (e) {
+    console.warn('Fullscreen failed:', e);
+  }
 });
 
 function isTabSource() {
@@ -215,34 +309,6 @@ function setCaptureCardAudioStatus(msg) {
   if (el) el.textContent = msg || '';
 }
 
-async function refreshCaptureCardAudioList() {
-  const capSel = $('captureCardSelect');
-  const audioSel = $('captureCardAudioSelect');
-  if (!audioSel || !capSel) return;
-
-  const videoId = capSel.value;
-  while (audioSel.options.length > 1) audioSel.remove(1);
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const paired = videoId ? findPairedAudioDevice(videoId, devices) : null;
-
-  if (paired) {
-    const opt = document.createElement('option');
-    opt.value = paired.deviceId;
-    opt.text = `${paired.label || 'Paired HDMI audio'} (recommended)`;
-    audioSel.appendChild(opt);
-    if (!audioSel.value) audioSel.value = paired.deviceId;
-  }
-
-  devices.filter(d => d.kind === 'audioinput').forEach((mic, i) => {
-    if (paired && mic.deviceId === paired.deviceId) return;
-    const opt = document.createElement('option');
-    opt.value = mic.deviceId;
-    opt.text = mic.label || `Audio input ${i + 1}`;
-    audioSel.appendChild(opt);
-  });
-}
-
 function wireCaptureCardAudioMonitor(stream) {
   const monitor = $('captureCardMonitor');
   if (!monitor) return;
@@ -252,11 +318,11 @@ function wireCaptureCardAudioMonitor(stream) {
     monitor.muted = false;
     monitor.volume = 1;
     monitor.play().catch(() => {});
-    setCaptureCardAudioStatus(`HDMI audio live: ${tracks[0].label || 'capture input'}`);
+    setCaptureCardAudioStatus(`HDMI audio: ${tracks[0].label || 'paired capture input'}`);
   } else {
     monitor.srcObject = null;
     if (wantCaptureCardAudio()) {
-      setCaptureCardAudioStatus('No HDMI audio track — try another HDMI audio input above.');
+      setCaptureCardAudioStatus('No HDMI audio on this capture device.');
     } else {
       setCaptureCardAudioStatus('');
     }
@@ -268,7 +334,6 @@ captureCardToggle?.addEventListener('change', async () => {
   captureCardOptions?.classList.toggle('hidden', !on);
   updateDualFeedWarning();
   if (on) {
-    await refreshCaptureCardAudioList();
     const devId = getSelectedCaptureDeviceId();
     if (devId) await startCaptureCardPreview();
     else setCaptureCardAudioStatus('Select your HDMI capture device above.');
@@ -279,20 +344,12 @@ captureCardToggle?.addEventListener('change', async () => {
 
 $('captureCardSelect')?.addEventListener('change', async () => {
   updateDualFeedWarning();
-  await refreshCaptureCardAudioList();
   if (captureCardToggle?.checked) {
     await restartCaptureCardPreview();
   }
 });
 
 $('captureCardAudio')?.addEventListener('change', async () => {
-  $('captureCardAudioRow')?.classList.toggle('hidden', !wantCaptureCardAudio());
-  if (captureCardToggle?.checked && getSelectedCaptureDeviceId()) {
-    await restartCaptureCardPreview();
-  }
-});
-
-$('captureCardAudioSelect')?.addEventListener('change', async () => {
   if (captureCardToggle?.checked && getSelectedCaptureDeviceId()) {
     await restartCaptureCardPreview();
   }
@@ -318,11 +375,7 @@ document.querySelectorAll('#capturePosButtons .pos-btn').forEach(btn => {
 async function openCaptureCardStream() {
   const devId = $('captureCardSelect')?.value;
   if (!devId) throw new Error('Select a capture card device first.');
-  const audioDeviceId = $('captureCardAudioSelect')?.value || null;
-  return getCaptureCardStream(devId, {
-    audio: wantCaptureCardAudio(),
-    audioDeviceId,
-  });
+  return getCaptureCardStream(devId, { audio: wantCaptureCardAudio() });
 }
 
 async function ensureCaptureCardStream() {
@@ -360,10 +413,11 @@ async function attachCaptureCardPreview(stream) {
   wireCaptureCardAudioMonitor(stream);
   captureCardPip.classList.remove('hidden');
   applyCaptureCardPos(captureCardPos);
-  applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '280', 10));
+  applyCaptureCardSize(parseInt(captureCardSizeSlider?.value || '560', 10));
   compositor.setCaptureEnabled(true);
   syncCompositorCapturePip();
   previewIdle?.classList.add('hidden');
+  refreshLivePreview();
 }
 
 async function startCaptureCardPreview() {
@@ -391,6 +445,8 @@ function stopCaptureCardPreview() {
   captureCardCapture.srcObject = null;
   captureCardPip.classList.add('hidden');
   compositor.setCaptureEnabled(false);
+  compositor.setCaptureAsMain(false);
+  refreshLivePreview();
 }
 
 function applyCaptureCardPos(pos) {
@@ -414,6 +470,7 @@ function syncCompositorCapturePip() {
 
 function syncCompositorPip() {
   compositor.setPipFromElement(webcamPip, previewContainer, 'webcam');
+  if (livePreviewActive) updatePreviewDomVisibility();
 }
 
 // ── Webcam background (session-only) ───────────────
@@ -435,6 +492,7 @@ document.querySelectorAll('input[name="bgMode"]').forEach(r => {
     bgImageRow?.classList.toggle('hidden', mode !== 'image');
     blurAmountRow?.classList.toggle('hidden', mode !== 'blur');
     syncCompositorBackground();
+    refreshLivePreview();
   });
 });
 
@@ -462,6 +520,7 @@ bgImageInput?.addEventListener('change', async () => {
     bgImageRow?.classList.remove('hidden');
     blurAmountRow?.classList.add('hidden');
     syncCompositorBackground();
+    refreshLivePreview();
   } catch (e) {
     alert('Could not load background image: ' + e.message);
   }
@@ -546,6 +605,7 @@ async function startWebcamPreview() {
     syncCompositorPip();
     syncCompositorBackground();
     setStatus('ready', 'Ready');
+    refreshLivePreview();
   } catch (e) {
     alert('Could not access webcam: ' + e.message);
     webcamToggle.checked = false;
@@ -617,6 +677,7 @@ function stopWebcamPreview() {
   webcamPip.srcObject = null;
   webcamCapture.srcObject = null;
   webcamPip.classList.add('hidden');
+  refreshLivePreview();
 }
 
 document.querySelectorAll('#webcamOptions .position-buttons .pos-btn').forEach(btn => {
@@ -1017,14 +1078,20 @@ async function startRecording() {
       await attachCaptureCardPreview(captureCardStream);
     } else if (main.role === 'capturecard') {
       captureCardStream = screenStream;
+      captureCardCapture.srcObject = new MediaStream(screenStream.getVideoTracks());
+      await playVideo(captureCardCapture);
       if (wantCaptureCardAudio()) {
         screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
       }
       wireCaptureCardAudioMonitor(screenStream);
       compositor.setCaptureEnabled(false);
+      compositor.setCaptureAsMain(true);
       skipWebcamPip = false;
     } else if (!wantCaptureCard) {
       compositor.setCaptureEnabled(false);
+      compositor.setCaptureAsMain(false);
+    } else {
+      compositor.setCaptureAsMain(false);
     }
 
     if (micAudioChk.checked) {
@@ -1076,6 +1143,9 @@ async function startRecording() {
       syncCompositorPip();
     }
 
+    syncLivePreviewLayout();
+    livePreviewActive = true;
+    updatePreviewDomVisibility();
     compositor.start();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
@@ -1325,10 +1395,12 @@ function cleanup() {
   screenCapture.srcObject = null;
   captureCardCapture.srcObject = null;
   compositor.setCaptureEnabled(false);
+  compositor.setCaptureAsMain(false);
   composeCanvas.classList.add('hidden');
   screenPreview.srcObject = null;
   screenPreview.classList.remove('active');
   pendingExport = null;
+  livePreviewActive = false;
   const anyPreview = webcamToggle.checked || captureCardToggle?.checked;
   if (!anyPreview) {
     webcamPip.classList.add('hidden');
@@ -1338,6 +1410,12 @@ function cleanup() {
     previewIdle.classList.add('hidden');
     if (!webcamToggle.checked) webcamPip.classList.add('hidden');
     if (!captureCardToggle?.checked) captureCardPip?.classList.add('hidden');
+    if (captureCardToggle?.checked && getSelectedCaptureDeviceId()) {
+      startCaptureCardPreview().catch(() => {});
+    } else if (webcamToggle.checked && webcamStream) {
+      webcamCapture.srcObject = webcamStream;
+      playVideo(webcamCapture).then(() => refreshLivePreview()).catch(() => {});
+    }
   }
 }
 

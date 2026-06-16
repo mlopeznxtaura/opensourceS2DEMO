@@ -513,8 +513,59 @@ html, body {
   justify-content: center;
   background: #080910;
   overflow: hidden;
-  min-height: 360px;
+  min-height: min(72vh, calc(100vh - 140px));
   border-bottom: 1px solid var(--border);
+}
+
+.preview-container:fullscreen {
+  min-height: 100vh;
+  background: #000;
+}
+
+.preview-container:fullscreen .compose-canvas {
+  max-width: 100vw;
+  max-height: 100vh;
+}
+
+.preview-fs-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 25;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+  background: rgba(20, 22, 27, 0.85);
+  color: var(--text2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition);
+}
+
+.preview-fs-btn:hover {
+  background: var(--surface3);
+  color: var(--text);
+}
+
+.compose-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  position: relative;
+  z-index: 10;
+}
+
+.compose-canvas.hidden { display: none; }
+
+.pip-ghost {
+  opacity: 0 !important;
+  pointer-events: auto;
 }
 
 #screenPreview {
@@ -527,15 +578,6 @@ html, body {
 }
 
 #screenPreview.active { display: block; }
-
-.compose-canvas {
-  max-width: 100%;
-  max-height: 100%;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
 
 .capture-pip {
   position: absolute;

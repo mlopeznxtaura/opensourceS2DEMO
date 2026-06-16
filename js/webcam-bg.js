@@ -26,13 +26,13 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
     drawCover(ctx, bgImage, x, y, dim, dim);
     drawForegroundOval(ctx, video, x, y, dim, 0.72);
   } else if (mode === 'blur') {
-    ctx.filter = `blur(${blurPx}px) saturate(1.1)`;
-    const scale = 1.18;
+    const scale = 1.35;
     const bw = dim * scale;
     const bh = dim * scale;
+    ctx.filter = `blur(${Math.max(8, blurPx)}px) saturate(1.15) brightness(0.95)`;
     ctx.drawImage(video, cx - bw / 2, cy - bh / 2, bw, bh);
     ctx.filter = 'none';
-    drawForegroundOval(ctx, video, x, y, dim, 0.68);
+    drawForegroundOval(ctx, video, x, y, dim, 0.75);
   } else {
     ctx.drawImage(video, x, y, dim, dim);
   }

@@ -8,11 +8,16 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
   let webcamPip = { x: 0.82, y: 0.82, size: 0.28 };
   let capturePip = { x: 0.18, y: 0.82, w: 0.28, h: 0.16 };
   let captureEnabled = false;
+  let captureAsMain = false;
   let captionText = '';
   let webcamBg = { mode: 'none', bgImage: null, blurPx: 18 };
 
   function setWebcamBackground(opts) {
     webcamBg = { ...webcamBg, ...opts };
+  }
+
+  function setCaptureAsMain(on) {
+    captureAsMain = !!on;
   }
 
   function setCaptureEnabled(on) {
@@ -48,8 +53,22 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
   }
 
   function drawFrame() {
-    const vw = screenVideo.videoWidth || 1280;
-    const vh = screenVideo.videoHeight || 720;
+    const capReady = captureCardVideo
+      && captureCardVideo.srcObject
+      && captureCardVideo.readyState >= 2
+      && captureCardVideo.videoWidth > 0;
+
+    let vw = screenVideo.videoWidth || 0;
+    let vh = screenVideo.videoHeight || 0;
+    if (captureAsMain && capReady) {
+      vw = captureCardVideo.videoWidth;
+      vh = captureCardVideo.videoHeight;
+    }
+    if (!vw || !vh) {
+      vw = capReady ? captureCardVideo.videoWidth : 1280;
+      vh = capReady ? captureCardVideo.videoHeight : 720;
+    }
+
     if (canvas.width !== vw || canvas.height !== vh) {
       canvas.width = vw;
       canvas.height = vh;
@@ -58,15 +77,13 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, vw, vh);
 
-    if (screenVideo.readyState >= 2) {
+    if (captureAsMain && capReady) {
+      ctx.drawImage(captureCardVideo, 0, 0, vw, vh);
+    } else if (screenVideo.readyState >= 2 && screenVideo.videoWidth > 0) {
       ctx.drawImage(screenVideo, 0, 0, vw, vh);
     }
 
-    const capOn = captureEnabled
-      && captureCardVideo
-      && captureCardVideo.srcObject
-      && captureCardVideo.readyState >= 2
-      && captureCardVideo.videoWidth > 0;
+    const capOn = !captureAsMain && captureEnabled && capReady;
 
     if (capOn) {
       const pw = vw * capturePip.w;
@@ -149,6 +166,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     setCaption,
     setWebcamBackground,
     setCaptureEnabled,
+    setCaptureAsMain,
     getPip: () => ({ webcam: { ...webcamPip }, capture: { ...capturePip } }),
   };
 }
