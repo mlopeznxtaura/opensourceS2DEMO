@@ -536,6 +536,14 @@ html, body {
   pointer-events: auto;
 }
 
+/* Position handle when Document PiP shows the live feed elsewhere */
+.webcam-pip.pip-position-handle {
+  opacity: 0.45 !important;
+  border: 2px dashed rgba(91, 224, 255, 0.85);
+  box-shadow: none;
+  cursor: move;
+}
+
 #screenPreview {
   max-width: 100%;
   max-height: 100%;

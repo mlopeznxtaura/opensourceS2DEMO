@@ -34,7 +34,7 @@ import {
   stopHdmiAudioMonitor,
   resumeAudioContexts,
   openMicStream,
-} from './platform.js?v=260611-nobg';
+} from './platform.js?v=260611-recwebcam';
 
 const $ = id => document.getElementById(id);
 
@@ -164,7 +164,7 @@ function stopLivePreview() {
   composeCanvas.classList.add('hidden');
   livePreviewActive = false;
   captureCardPip.classList.remove('pip-ghost');
-  webcamPip.classList.remove('pip-ghost');
+  webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
   if (!captureCardToggle?.checked) captureCardPip.classList.add('hidden');
   if (!webcamToggle.checked) webcamPip.classList.add('hidden');
   if (!captureCardToggle?.checked && !webcamToggle.checked) previewIdle?.classList.remove('hidden');
@@ -578,24 +578,24 @@ function isDocPipWebcamActive() {
   return isDocPipActive() && webcamToggle.checked;
 }
 
-/** Document PiP = only webcam surface when open; in-page bubble is fallback only. */
+/** Webcam is always burned into the recording; Document PiP is follow-along only. */
 function syncWebcamSurface() {
-  const pipOnly = isDocPipWebcamActive();
-  compositor?.setWebcamOnCanvas(!pipOnly);
+  compositor?.setWebcamOnCanvas(true);
 
   if (!webcamToggle.checked || !webcamStream) {
     webcamPip.classList.add('hidden');
-    compositor?.setWebcamOnCanvas(true);
-    return;
-  }
-
-  if (pipOnly) {
-    webcamPip.classList.add('hidden');
+    webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
     return;
   }
 
   webcamPip.srcObject = webcamStream;
-  webcamPip.classList.remove('hidden', 'pip-ghost');
+  webcamPip.classList.remove('hidden');
+
+  if (isDocPipWebcamActive()) {
+    webcamPip.classList.add('pip-ghost', 'pip-position-handle');
+  } else {
+    webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
+  }
 }
 
 /** Open Document PiP on a fresh user gesture before any await (camera / display picker). */
@@ -637,7 +637,7 @@ async function syncDocumentPiP() {
     }
   }
   syncWebcamSurface();
-  if (!isDocPipWebcamActive()) syncCompositorPip();
+  syncCompositorPip();
   syncDocPipCaption(currentCaption);
 }
 
@@ -1229,6 +1229,7 @@ async function startRecording() {
       await playVideo(webcamCapture);
       await waitForVideoFrame(webcamCapture);
       await syncWebcamPresentation();
+      compositor.setWebcamOnCanvas(true);
       syncCompositorPip();
     }
 
