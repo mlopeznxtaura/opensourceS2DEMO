@@ -9,6 +9,7 @@ import {
   downloadText,
   downloadActionPlanPdf,
   buildTranscript,
+  mergeExportCues,
 } from './plan-export.js';
 import { loadSessionBackground } from './webcam-bg.js';
 import { resetSession } from './session.js';
@@ -50,6 +51,7 @@ let captureCardStream = null;
 let docPipWindow   = null;
 let skipWebcamPip  = false;
 let recordMimeType = '';
+let recordIntent   = { video: true, notesPlan: true, vtt: true };
 
 // Session-only (wiped after export — never persisted)
 let sessionBgImage = null;
@@ -79,6 +81,9 @@ const micSelectRow   = $('micSelectRow');
 const camSizeSlider  = $('camSize');
 const camSizeVal     = $('camSizeVal');
 const exportModal    = $('exportModal');
+const recordIntentModal = $('recordIntentModal');
+const exportManualNotes = $('exportManualNotes');
+const exportNotesWarn = $('exportNotesWarn');
 const captureCardToggle = $('captureCardToggle');
 const captureCardOptions = $('captureCardOptions');
 const captureCardPip = $('captureCardPip');
@@ -711,8 +716,62 @@ micAudioChk.addEventListener('change', () => {
 
 // ── Record button ──────────────────────────────────
 recordBtn.addEventListener('click', () => {
-  if (!mediaRecorder || mediaRecorder.state === 'inactive') startRecording();
-  else stopRecording();
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+    showRecordIntentModal();
+  } else {
+    stopRecording();
+  }
+});
+
+function showRecordIntentModal() {
+  const iv = $('intentVideo');
+  const inotes = $('intentNotesPlan');
+  const ivtt = $('intentVtt');
+  if (iv) iv.checked = recordIntent.video;
+  if (inotes) inotes.checked = recordIntent.notesPlan;
+  if (ivtt) ivtt.checked = recordIntent.vtt;
+  recordIntentModal?.classList.remove('hidden');
+}
+
+function hideRecordIntentModal() {
+  recordIntentModal?.classList.add('hidden');
+}
+
+function applyRecordIntent() {
+  recordIntent = {
+    video: $('intentVideo')?.checked ?? true,
+    notesPlan: $('intentNotesPlan')?.checked ?? true,
+    vtt: $('intentVtt')?.checked ?? true,
+  };
+
+  if (recordIntent.notesPlan || recordIntent.vtt) {
+    micAudioChk.checked = true;
+    micSelectRow.style.display = 'block';
+    if (SpeechRec && (recordIntent.vtt || recordIntent.notesPlan)) {
+      captionsToggle.checked = true;
+      if (captionStatus) {
+        captionStatus.textContent = 'Captions on — speak clearly for meeting notes & action plan.';
+      }
+    } else if (captionStatus) {
+      captionStatus.textContent = 'Type meeting notes in the export dialog after you stop (Safari/iOS).';
+    }
+  }
+}
+
+$('intentConfirm')?.addEventListener('click', () => {
+  const any = $('intentVideo')?.checked || $('intentNotesPlan')?.checked || $('intentVtt')?.checked;
+  if (!any) {
+    alert('Select at least one: video, meeting notes/action plan, or captions.');
+    return;
+  }
+  applyRecordIntent();
+  hideRecordIntentModal();
+  startRecording();
+});
+
+$('intentCancel')?.addEventListener('click', hideRecordIntentModal);
+recordIntentModal?.addEventListener('click', e => {
+  if (e.target === recordIntentModal) hideRecordIntentModal();
 });
 
 pauseBtn.addEventListener('click', () => {
@@ -927,34 +986,77 @@ function stopRecording() {
   pauseBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause`;
 }
 
-function saveRecording() {
-  if (recordedChunks.length === 0) { cleanup(); return; }
+function getExportCues() {
+  if (!pendingExport) return [];
+  const manual = exportManualNotes?.value || '';
+  return mergeExportCues(pendingExport.cues, manual, pendingExport.durationMs);
+}
 
+function updateExportPreview() {
+  if (!pendingExport) return;
+  const cues = getExportCues();
+  const transcript = buildTranscript(cues);
+  const preview = $('exportPreview');
+  const warn = exportNotesWarn;
+  const wantNotes = $('exportNotes')?.checked || $('exportPdf')?.checked;
+
+  if (preview) {
+    preview.textContent = transcript
+      ? transcript.slice(0, 280) + (transcript.length > 280 ? '…' : '')
+      : 'No speech yet — type meeting notes below for your .md and action plan PDF.';
+  }
+
+  if (warn) {
+    if (wantNotes && !transcript) {
+      warn.textContent = 'Meeting notes & action plan need a transcript or typed notes below.';
+      warn.classList.remove('hidden');
+    } else {
+      warn.classList.add('hidden');
+      warn.textContent = '';
+    }
+  }
+}
+
+function saveRecording() {
   const mimeType = recordMimeType || mediaRecorder?.mimeType || 'video/mp4';
   const ext      = mimeToExtension(mimeType);
-  const blob     = new Blob(recordedChunks, { type: mimeType });
+  const blob     = recordedChunks.length
+    ? new Blob(recordedChunks, { type: mimeType })
+    : null;
   const basename = `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
   const durationMs = startTime ? recordingClock() : 0;
   const cues = [...captionCues];
 
   pendingExport = { blob, mimeType, ext, basename, cues, durationMs };
-  showExportModal();
   recordedChunks = [];
+  showExportModal();
 }
 
 function showExportModal() {
   if (!pendingExport) return;
-  const { cues, durationMs } = pendingExport;
-  const transcript = buildTranscript(cues);
-  const preview = $('exportPreview');
-  if (preview) {
-    preview.textContent = transcript
-      ? transcript.slice(0, 280) + (transcript.length > 280 ? '…' : '')
-      : 'No speech captured. Enable Auto Captions + microphone to generate meeting notes and action plans.';
+  const { durationMs, blob } = pendingExport;
+
+  if ($('exportVideo')) $('exportVideo').checked = recordIntent.video && !!blob;
+  if ($('exportNotes')) $('exportNotes').checked = recordIntent.notesPlan;
+  if ($('exportPdf')) $('exportPdf').checked = recordIntent.notesPlan;
+  if ($('exportVtt')) $('exportVtt').checked = recordIntent.vtt;
+
+  if (!blob && $('exportVideo')) {
+    $('exportVideo').disabled = true;
+    $('exportVideo').checked = false;
+  } else if ($('exportVideo')) {
+    $('exportVideo').disabled = false;
   }
+
+  if (exportManualNotes) exportManualNotes.value = '';
   const durEl = $('exportDuration');
   if (durEl) durEl.textContent = durationMs ? formatTime(Math.floor(durationMs / 1000)) : '—';
+
+  updateExportPreview();
   exportModal.classList.remove('hidden');
+  if (!buildTranscript(pendingExport.cues)) {
+    exportManualNotes?.focus();
+  }
 }
 
 function hideExportModal() {
@@ -963,26 +1065,38 @@ function hideExportModal() {
   wipeSession();
 }
 
-function downloadVideo() {
-  if (!pendingExport) return;
-  const { blob, ext, basename } = pendingExport;
+async function downloadBlobFile(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${basename}.${ext}`;
+  a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  a.remove();
+  await new Promise(r => setTimeout(r, isIOS ? 600 : 80));
+  URL.revokeObjectURL(url);
 }
 
-$('exportConfirm')?.addEventListener('click', () => {
+async function runExportDownloads() {
   if (!pendingExport) return;
-  const { cues, basename, durationMs, ext } = pendingExport;
-  const wantVideo  = $('exportVideo')?.checked;
+  const { blob, basename, durationMs, ext } = pendingExport;
+  const wantVideo  = $('exportVideo')?.checked && blob;
   const wantNotes  = $('exportNotes')?.checked;
   const wantPdf    = $('exportPdf')?.checked;
   const wantVtt    = $('exportVtt')?.checked;
+  const cues = getExportCues();
+  const transcript = buildTranscript(cues);
 
-  if (wantVideo) downloadVideo();
+  if (!wantVideo && !wantNotes && !wantPdf && !wantVtt) {
+    alert('Select at least one item to download.');
+    return false;
+  }
+
+  if ((wantNotes || wantPdf) && !transcript) {
+    alert('Add a transcript (enable captions + mic while recording) or type meeting notes in the box below.');
+    exportManualNotes?.focus();
+    return false;
+  }
 
   const meta = {
     title: 'Meeting Notes — opensourceS2DEMO',
@@ -991,31 +1105,49 @@ $('exportConfirm')?.addEventListener('click', () => {
     basename,
   };
 
+  if (wantVideo) {
+    await downloadBlobFile(`${basename}.${ext}`, blob);
+  }
+
   if (wantNotes) {
     downloadText(`${basename}-meeting-notes.md`, buildMeetingNotes(cues, meta));
+    await new Promise(r => setTimeout(r, isIOS ? 400 : 50));
   }
 
   if (wantPdf) {
     if (window.jspdf?.jsPDF) {
       downloadActionPlanPdf({ cues, meta, jsPDF: window.jspdf.jsPDF });
+      await new Promise(r => setTimeout(r, isIOS ? 400 : 50));
     } else {
-      alert('PDF library not loaded. Meeting notes (.md) still available.');
+      alert('PDF library not loaded — meeting notes (.md) was still generated.');
     }
   }
 
-  if (wantVtt && cues.length) {
+  if (wantVtt) {
+    if (!cues.length) {
+      alert('No transcript for .vtt — enable captions or type notes first.');
+      return false;
+    }
     downloadText(`${basename}.vtt`, buildVttFromCues(cues), 'text/vtt');
   }
 
+  return true;
+}
+
+$('exportConfirm')?.addEventListener('click', async () => {
+  const ok = await runExportDownloads();
+  if (!ok) return;
   exportModal.classList.add('hidden');
   cleanup();
   wipeSession();
 });
 
-$('exportCancel')?.addEventListener('click', hideExportModal);
-exportModal?.addEventListener('click', e => {
-  if (e.target === exportModal) hideExportModal();
+['exportNotes', 'exportPdf', 'exportVtt', 'exportVideo'].forEach(id => {
+  $(id)?.addEventListener('change', updateExportPreview);
 });
+exportManualNotes?.addEventListener('input', updateExportPreview);
+
+$('exportCancel')?.addEventListener('click', hideExportModal);
 
 function cleanup() {
   compositor?.stop();

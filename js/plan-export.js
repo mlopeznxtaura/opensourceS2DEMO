@@ -11,6 +11,39 @@ export function buildTranscript(cues) {
   return cues.map(c => c.text).join(' ').replace(/\s+/g, ' ').trim();
 }
 
+/** Turn typed export notes into pseudo-cues for notes/PDF/VTT. */
+export function cuesFromManualText(text, durationMs = 60000) {
+  const raw = (text || '').trim();
+  if (!raw) return [];
+  const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
+  const end = Math.max(durationMs, 1000);
+  if (lines.length <= 1) {
+    return [{ start: 0, end, text: lines[0] || raw }];
+  }
+  const step = end / lines.length;
+  return lines.map((line, i) => ({
+    start: Math.round(i * step),
+    end: Math.round((i + 1) * step),
+    text: line,
+  }));
+}
+
+export function mergeExportCues(speechCues, manualText, durationMs) {
+  const speech = speechCues?.length ? [...speechCues] : [];
+  const manual = cuesFromManualText(manualText, durationMs);
+  if (!speech.length) return manual;
+  if (!manual.length) return speech;
+  const offset = speech[speech.length - 1].end + 500;
+  return [
+    ...speech,
+    ...manual.map(c => ({
+      start: c.start + offset,
+      end: c.end + offset,
+      text: c.text,
+    })),
+  ];
+}
+
 export function buildMeetingNotes(cues, meta = {}) {
   const title = meta.title || 'Meeting Notes';
   const when = meta.recordedAt || new Date().toISOString();

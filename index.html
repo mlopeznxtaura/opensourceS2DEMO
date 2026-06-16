@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260617-safari" />
+  <link rel="stylesheet" href="css/style.css?v=260617-export" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260617-safari</span>
+        <span class="build-badge" title="Deployed build">build 260617-export</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -243,12 +243,33 @@
     </main>
   </div>
 
+  <!-- Pre-record: what to export -->
+  <div id="recordIntentModal" class="modal hidden" role="dialog" aria-labelledby="intentTitle">
+    <div class="modal-card">
+      <h2 id="intentTitle" class="modal-title">What do you want from this recording?</h2>
+      <p class="modal-sub">Choose now so we can capture voice for meeting notes and your action plan.</p>
+      <div class="export-options">
+        <label class="export-opt"><input type="checkbox" id="intentVideo" checked /> Video recording</label>
+        <label class="export-opt"><input type="checkbox" id="intentNotesPlan" checked /> Meeting notes (.md) &amp; action plan (PDF)</label>
+        <label class="export-opt"><input type="checkbox" id="intentVtt" checked /> Captions sidecar (.vtt)</label>
+      </div>
+      <p class="caption-note" id="intentNotesHint">
+        Meeting notes need your microphone. Chrome/Edge use live captions; Safari/iOS can type notes at export.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="btn-pause" id="intentCancel">Cancel</button>
+        <button type="button" class="btn-record" id="intentConfirm">Start recording</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Export modal -->
   <div id="exportModal" class="modal hidden" role="dialog" aria-labelledby="exportTitle">
     <div class="modal-card">
       <h2 id="exportTitle" class="modal-title">Export recording</h2>
       <p class="modal-sub">Choose what to download. Voice transcript powers meeting notes and the action plan.</p>
       <p class="modal-meta">Duration: <span id="exportDuration">—</span></p>
+      <p class="export-warn hidden" id="exportNotesWarn"></p>
       <div class="export-options">
         <label class="export-opt"><input type="checkbox" id="exportVideo" checked /> Video recording (.mp4 / .webm)</label>
         <label class="export-opt"><input type="checkbox" id="exportNotes" checked /> Meeting notes (.md)</label>
@@ -259,6 +280,10 @@
         <span class="position-label">Transcript preview</span>
         <div id="exportPreview" class="export-preview">—</div>
       </div>
+      <div class="export-manual-wrap" id="exportManualWrap">
+        <span class="position-label">Meeting notes / action items (type if captions were off)</span>
+        <textarea id="exportManualNotes" class="export-manual-notes" rows="5" placeholder="Key decisions, action items, follow-ups…"></textarea>
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn-pause" id="exportCancel">Cancel</button>
         <button type="button" class="btn-record" id="exportConfirm">Download selected</button>
@@ -267,6 +292,6 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260617-safari"></script>
+  <script type="module" src="js/app.js?v=260617-export"></script>
 </body>
 </html>

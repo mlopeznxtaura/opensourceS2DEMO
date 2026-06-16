@@ -799,6 +799,41 @@ html, body {
   overflow-y: auto;
 }
 
+.export-warn {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--accent2);
+  background: rgba(255, 140, 66, 0.1);
+  border: 1px solid rgba(255, 140, 66, 0.35);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.export-manual-wrap {
+  margin-bottom: 16px;
+}
+
+.export-manual-notes {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.export-manual-notes:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .modal-actions {
   display: flex;
   gap: 10px;
