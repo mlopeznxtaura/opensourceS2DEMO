@@ -537,8 +537,18 @@ function syncWebcamSegmentation() {
     blurPx: parseInt($('blurAmount')?.value || '14', 10),
   });
   const statusEl = $('segStatus');
-  if (useSeg && webcamCapture.srcObject && webcamCapture.videoWidth > 0) {
-    startSegmentationLoop(webcamCapture);
+  if (useSeg && webcamCapture.srcObject) {
+    if (webcamCapture.videoWidth > 0) {
+      startSegmentationLoop(webcamCapture);
+    } else {
+      waitForVideoFrame(webcamCapture)
+        .then(() => {
+          if (webcamToggle.checked && (getBgMode() === 'blur' || getBgMode() === 'image')) {
+            startSegmentationLoop(webcamCapture);
+          }
+        })
+        .catch(() => {});
+    }
   } else {
     stopSegmentationLoop();
     if (statusEl) statusEl.textContent = '';
