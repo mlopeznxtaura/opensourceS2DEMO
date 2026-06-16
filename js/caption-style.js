@@ -89,8 +89,9 @@ export function pipCaptionCss(fontPx = 15) {
   return `
     .pip-root { display:flex; flex-direction:column; height:100%; background:#0d0e11; overflow:hidden; }
     .pip-webcam-wrap { flex:0 0 auto; position:relative; display:flex; align-items:center; justify-content:center;
-      padding:8px; min-height:0; }
-    .pip-webcam-wrap video { width:100%; max-height:100%; object-fit:cover; border-radius:50%; aspect-ratio:1; }
+      padding:8px; min-height:0; overflow:hidden; }
+    .pip-webcam-wrap video { width:100%; max-height:100%; object-fit:cover; aspect-ratio:1;
+      clip-path:circle(50% at 50% 50%); -webkit-clip-path:circle(50% at 50% 50%); }
     .pip-caption { flex:0 0 auto; margin:0 8px 8px; padding:10px 14px; border-radius:10px;
       background:rgba(0,0,0,0.75); color:#fff; font:600 ${fontPx}px/1.35 Inter,system-ui,sans-serif;
       text-align:center; word-break:break-word; max-height:4.5em; overflow:hidden; }

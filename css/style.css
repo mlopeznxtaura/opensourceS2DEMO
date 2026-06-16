@@ -536,12 +536,14 @@ html, body {
   pointer-events: auto;
 }
 
-/* Position handle when Document PiP shows the live feed elsewhere */
+/* Position handle only — no video (compositor + Doc PiP own the picture) */
 .webcam-pip.pip-position-handle {
-  opacity: 0.45 !important;
+  opacity: 1 !important;
+  background: transparent;
   border: 2px dashed rgba(91, 224, 255, 0.85);
   box-shadow: none;
   cursor: move;
+  object-fit: none;
 }
 
 #screenPreview {

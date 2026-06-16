@@ -34,7 +34,7 @@ import {
   stopHdmiAudioMonitor,
   resumeAudioContexts,
   openMicStream,
-} from './platform.js?v=260611-recwebcam';
+} from './platform.js?v=260611-nodup';
 
 const $ = id => document.getElementById(id);
 
@@ -578,22 +578,30 @@ function isDocPipWebcamActive() {
   return isDocPipActive() && webcamToggle.checked;
 }
 
-/** Webcam is always burned into the recording; Document PiP is follow-along only. */
+/** Webcam is always burned into the recording; in-page bubble is position-only (no video). */
 function syncWebcamSurface() {
   compositor?.setWebcamOnCanvas(true);
 
   if (!webcamToggle.checked || !webcamStream) {
     webcamPip.classList.add('hidden');
     webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
+    webcamPip.srcObject = null;
     return;
   }
 
-  webcamPip.srcObject = webcamStream;
   webcamPip.classList.remove('hidden');
+  // Never paint the feed on the DOM bubble while the compositor (or Doc PiP) shows it —
+  // two stacked copies caused ghosting / soft double-image artifacts.
+  webcamPip.srcObject = null;
 
   if (isDocPipWebcamActive()) {
-    webcamPip.classList.add('pip-ghost', 'pip-position-handle');
+    webcamPip.classList.add('pip-position-handle');
+    webcamPip.classList.remove('pip-ghost');
+  } else if (livePreviewActive || isRecordingActive()) {
+    webcamPip.classList.add('pip-ghost');
+    webcamPip.classList.remove('pip-position-handle');
   } else {
+    webcamPip.srcObject = webcamStream;
     webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
   }
 }
