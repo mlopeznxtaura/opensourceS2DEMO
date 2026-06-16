@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260617-hdmiaudio" />
+  <link rel="stylesheet" href="css/style.css?v=260617-dualfeed" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260617-hdmiaudio</span>
+        <span class="build-badge" title="Deployed build">build 260617-dualfeed</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -60,7 +60,7 @@
         </section>
 
         <section class="panel-section">
-          <h2 class="section-label">Capture Card</h2>
+          <h2 class="section-label">Feed 1 — HDMI / Capture Card</h2>
           <div class="toggle-row">
             <label class="toggle-label">Enable HDMI / capture input</label>
             <label class="toggle">
@@ -88,7 +88,7 @@
                 </select>
               </div>
               <p class="caption-status" id="captureCardAudioStatus"></p>
-              <p class="caption-note">Webcam is a separate device for your face overlay. Pick the capture card here for Chromecast/HDMI video + sound.</p>
+              <p class="caption-note">Chromecast/console HDMI. Runs at the same time as Feed 2 (webcam).</p>
             </div>
             <div class="position-grid">
               <span class="position-label">Card position</span>
@@ -131,9 +131,9 @@
         </section>
 
         <section class="panel-section">
-          <h2 class="section-label">Webcam Overlay</h2>
+          <h2 class="section-label">Feed 2 — Webcam Overlay</h2>
           <div class="toggle-row">
-            <label class="toggle-label">Enable Webcam</label>
+            <label class="toggle-label">Enable webcam (face overlay)</label>
             <label class="toggle">
               <input type="checkbox" id="webcamToggle" />
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -141,9 +141,12 @@
           </div>
           <div class="webcam-options" id="webcamOptions">
             <div class="cam-select-row">
+              <span class="position-label">Device</span>
               <select id="camSelect" class="mic-select">
                 <option value="">Webcam (face overlay)…</option>
               </select>
+              <p class="caption-note">Runs at the same time as Feed 1. Use a different camera than the capture card.</p>
+              <p class="caption-status hidden" id="dualFeedWarn"></p>
             </div>
             <div class="position-grid">
               <span class="position-label">Position</span>
@@ -299,7 +302,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260617-hdmiaudio"></script>
+  <script type="module" src="js/app.js?v=260617-dualfeed"></script>
   <audio id="captureCardMonitor" class="hidden" playsinline></audio>
 </body>
 </html>

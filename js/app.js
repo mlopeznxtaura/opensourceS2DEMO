@@ -50,6 +50,8 @@ let captureCardPos = 'bottom-left';
 let compositor     = null;
 let pendingExport  = null;
 let captureCardStream = null;
+let activeCaptureDeviceId = null;
+let activeWebcamDeviceId = null;
 let docPipWindow   = null;
 let skipWebcamPip  = false;
 let recordMimeType = '';
@@ -113,6 +115,55 @@ function canMigrateWebcam() {
   return isTabSource() && webcamToggle.checked && 'documentPictureInPicture' in window;
 }
 
+function fillDeviceSelect(sel, devices, labelFn) {
+  if (!sel) return;
+  const prev = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  devices.forEach((d, i) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.text = labelFn(d, i);
+    sel.appendChild(opt);
+  });
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+function getSelectedCaptureDeviceId() {
+  return $('captureCardSelect')?.value || '';
+}
+
+function getSelectedWebcamDeviceId() {
+  return $('camSelect')?.value || '';
+}
+
+function sameVideoDeviceSelected() {
+  const cap = getSelectedCaptureDeviceId();
+  const cam = getSelectedWebcamDeviceId();
+  return !!(cap && cam && cap === cam);
+}
+
+function updateDualFeedWarning() {
+  const el = $('dualFeedWarn');
+  if (!el) return;
+  if (captureCardToggle?.checked && webcamToggle?.checked && sameVideoDeviceSelected()) {
+    el.textContent = 'Both feeds need two different cameras — pick one device per feed.';
+    el.classList.remove('hidden');
+  } else {
+    el.textContent = '';
+    el.classList.add('hidden');
+  }
+}
+
+function assertDistinctVideoFeeds() {
+  if (captureCardToggle?.checked && webcamToggle?.checked && sameVideoDeviceSelected()) {
+    throw new Error('Capture card and webcam must be two different devices. Pick one camera per feed.');
+  }
+}
+
+function isStreamLive(stream) {
+  return !!stream?.getVideoTracks().some(t => t.readyState === 'live');
+}
+
 // ── Init: enumerate devices ────────────────────────
 async function enumerateDevices() {
   try {
@@ -131,38 +182,11 @@ async function enumerateDevices() {
     const camSel = $('camSelect');
     const capSel = $('captureCardSelect');
 
-    [micSel, camSel, capSel].forEach(sel => {
-      if (!sel) return;
-      while (sel.options.length > 1) sel.remove(1);
-    });
+    fillDeviceSelect(micSel, mics, (mic, i) => mic.label || `Microphone ${i + 1}`);
+    fillDeviceSelect(camSel, cams, (cam, i) => cam.label || `Camera ${i + 1}`);
+    fillDeviceSelect(capSel, cams, (cam, i) => cam.label || `HDMI / capture ${i + 1}`);
 
-    const capVideoId = $('captureCardSelect')?.value || '';
-
-    mics.forEach((mic, i) => {
-      const opt = document.createElement('option');
-      opt.value = mic.deviceId;
-      opt.text  = mic.label || `Microphone ${i + 1}`;
-      micSel.appendChild(opt);
-    });
-
-    cams.forEach((cam, i) => {
-      if (capVideoId && cam.deviceId === capVideoId) return;
-      const opt = document.createElement('option');
-      opt.value = cam.deviceId;
-      opt.text  = cam.label || `Camera ${i + 1}`;
-      camSel.appendChild(opt);
-    });
-
-    if (capSel) {
-      const camVideoId = $('camSelect')?.value || '';
-      cams.forEach((cam, i) => {
-        if (camVideoId && cam.deviceId === camVideoId) return;
-        const opt = document.createElement('option');
-        opt.value = cam.deviceId;
-        opt.text  = cam.label || `HDMI / capture ${i + 1}`;
-        capSel.appendChild(opt);
-      });
-    }
+    updateDualFeedWarning();
   } catch (e) {
     console.warn('Device enumeration failed:', e);
   }
@@ -242,9 +266,10 @@ function wireCaptureCardAudioMonitor(stream) {
 captureCardToggle?.addEventListener('change', async () => {
   const on = captureCardToggle.checked;
   captureCardOptions?.classList.toggle('hidden', !on);
+  updateDualFeedWarning();
   if (on) {
     await refreshCaptureCardAudioList();
-    const devId = $('captureCardSelect')?.value;
+    const devId = getSelectedCaptureDeviceId();
     if (devId) await startCaptureCardPreview();
     else setCaptureCardAudioStatus('Select your HDMI capture device above.');
   } else {
@@ -253,25 +278,23 @@ captureCardToggle?.addEventListener('change', async () => {
 });
 
 $('captureCardSelect')?.addEventListener('change', async () => {
+  updateDualFeedWarning();
   await refreshCaptureCardAudioList();
   if (captureCardToggle?.checked) {
-    stopCaptureCardPreview();
-    if ($('captureCardSelect')?.value) await startCaptureCardPreview();
+    await restartCaptureCardPreview();
   }
 });
 
 $('captureCardAudio')?.addEventListener('change', async () => {
   $('captureCardAudioRow')?.classList.toggle('hidden', !wantCaptureCardAudio());
-  if (captureCardToggle?.checked && $('captureCardSelect')?.value) {
-    stopCaptureCardPreview();
-    await startCaptureCardPreview();
+  if (captureCardToggle?.checked && getSelectedCaptureDeviceId()) {
+    await restartCaptureCardPreview();
   }
 });
 
 $('captureCardAudioSelect')?.addEventListener('change', async () => {
-  if (captureCardToggle?.checked && $('captureCardSelect')?.value) {
-    stopCaptureCardPreview();
-    await startCaptureCardPreview();
+  if (captureCardToggle?.checked && getSelectedCaptureDeviceId()) {
+    await restartCaptureCardPreview();
   }
 });
 
@@ -303,9 +326,30 @@ async function openCaptureCardStream() {
 }
 
 async function ensureCaptureCardStream() {
-  if (captureCardStream) return captureCardStream;
+  const devId = getSelectedCaptureDeviceId();
+  if (!devId) throw new Error('Select a capture card device first.');
+  assertDistinctVideoFeeds();
+  if (captureCardStream && activeCaptureDeviceId === devId && isStreamLive(captureCardStream)) {
+    return captureCardStream;
+  }
+  stopCaptureCardTracks();
   captureCardStream = await openCaptureCardStream();
+  activeCaptureDeviceId = devId;
   return captureCardStream;
+}
+
+function stopCaptureCardTracks() {
+  if (captureCardStream) {
+    captureCardStream.getTracks().forEach(t => t.stop());
+    captureCardStream = null;
+  }
+  activeCaptureDeviceId = null;
+}
+
+async function restartCaptureCardPreview() {
+  stopCaptureCardTracks();
+  if (getSelectedCaptureDeviceId()) await startCaptureCardPreview();
+  else stopCaptureCardPreview();
 }
 
 async function attachCaptureCardPreview(stream) {
@@ -342,10 +386,7 @@ function stopCaptureCardPreview() {
   const monitor = $('captureCardMonitor');
   if (monitor) monitor.srcObject = null;
   setCaptureCardAudioStatus('');
-  if (captureCardStream) {
-    captureCardStream.getTracks().forEach(t => t.stop());
-    captureCardStream = null;
-  }
+  stopCaptureCardTracks();
   captureCardPip.srcObject = null;
   captureCardCapture.srcObject = null;
   captureCardPip.classList.add('hidden');
@@ -451,9 +492,11 @@ function wipeSession() {
 webcamToggle.addEventListener('change', async () => {
   if (webcamToggle.checked) {
     webcamOptions.style.display = 'flex';
+    updateDualFeedWarning();
     await startWebcamPreview();
   } else {
     webcamOptions.style.display = 'none';
+    updateDualFeedWarning();
     stopWebcamPreview();
   }
 });
@@ -461,17 +504,36 @@ webcamToggle.addEventListener('change', async () => {
 webcamOptions.style.display = 'none';
 
 $('camSelect').addEventListener('change', async () => {
+  updateDualFeedWarning();
   if (webcamToggle.checked) {
-    stopWebcamPreview();
-    await startWebcamPreview();
+    restartWebcamPreview();
   }
 });
 
 async function ensureWebcamStream() {
-  if (webcamStream) return webcamStream;
-  const camId = $('camSelect').value;
+  const camId = getSelectedWebcamDeviceId();
+  assertDistinctVideoFeeds();
+  if (webcamStream && activeWebcamDeviceId === camId && isStreamLive(webcamStream)) {
+    return webcamStream;
+  }
+  stopWebcamTracks();
   webcamStream = await getUserMediaVideo(camId || null, { audio: false });
+  activeWebcamDeviceId = camId;
   return webcamStream;
+}
+
+function stopWebcamTracks() {
+  if (webcamStream) {
+    webcamStream.getTracks().forEach(t => t.stop());
+    webcamStream = null;
+  }
+  activeWebcamDeviceId = null;
+}
+
+async function restartWebcamPreview() {
+  stopWebcamTracks();
+  if (webcamToggle.checked) await startWebcamPreview();
+  else stopWebcamPreview();
 }
 
 async function startWebcamPreview() {
@@ -551,10 +613,7 @@ function closeWebcamDocumentPiP() {
 
 function stopWebcamPreview() {
   closeWebcamDocumentPiP();
-  if (webcamStream) {
-    webcamStream.getTracks().forEach(t => t.stop());
-    webcamStream = null;
-  }
+  stopWebcamTracks();
   webcamPip.srcObject = null;
   webcamCapture.srcObject = null;
   webcamPip.classList.add('hidden');
@@ -942,19 +1001,16 @@ async function startRecording() {
     screenStream.getAudioTracks().forEach(t => audioTracks.push(t));
 
     if (wantCaptureCard && main.role !== 'capturecard') {
-      const devId = $('captureCardSelect')?.value;
+      const devId = getSelectedCaptureDeviceId();
       if (!devId) {
         alert('Select a capture card / HDMI device first.');
         screenStream.getTracks().forEach(t => t.stop());
         screenStream = null;
         return;
       }
+      assertDistinctVideoFeeds();
       const wantCapAudio = wantCaptureCardAudio();
-      if (captureCardStream) {
-        captureCardStream.getTracks().forEach(t => t.stop());
-        captureCardStream = null;
-      }
-      captureCardStream = await openCaptureCardStream();
+      captureCardStream = await ensureCaptureCardStream();
       if (wantCapAudio) {
         captureCardStream.getAudioTracks().forEach(t => audioTracks.push(t));
       }
@@ -1011,7 +1067,8 @@ async function startRecording() {
     await waitForVideoFrame(screenCapture);
 
     if (webcamToggle.checked && !skipWebcamPip) {
-      if (!webcamStream) await startWebcamPreview();
+      assertDistinctVideoFeeds();
+      if (!webcamStream || !isStreamLive(webcamStream)) await startWebcamPreview();
       webcamCapture.srcObject = webcamStream;
       await playVideo(webcamCapture);
       await waitForVideoFrame(webcamCapture);
@@ -1257,8 +1314,13 @@ function cleanup() {
   closeWebcamDocumentPiP();
   skipWebcamPip = false;
   recordMimeType = '';
+  const sharedCapture = !!(captureCardStream && screenStream && captureCardStream === screenStream);
   if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
-  if (captureCardStream) { captureCardStream.getTracks().forEach(t => t.stop()); captureCardStream = null; }
+  if (captureCardStream && !sharedCapture) {
+    captureCardStream.getTracks().forEach(t => t.stop());
+  }
+  captureCardStream = null;
+  activeCaptureDeviceId = null;
   if (micStream)    { micStream.getTracks().forEach(t => t.stop());    micStream    = null; }
   screenCapture.srcObject = null;
   captureCardCapture.srcObject = null;
