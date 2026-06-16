@@ -750,7 +750,7 @@ html, body {
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.75);
   color: #fff;
-  font-size: 42px;
+  font-size: clamp(30px, 2.8vmin, 48px);
   font-weight: 600;
   line-height: 1.35;
   text-align: center;

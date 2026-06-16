@@ -1,6 +1,7 @@
 /* Canvas compositor — screen + capture card + webcam PiP + captions */
 
 import { drawWebcamWithBackground } from './webcam-bg.js';
+import { drawCaptionOnCanvas } from './caption-style.js';
 
 export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, canvas }) {
   const ctx = canvas.getContext('2d');
@@ -123,25 +124,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     }
 
     if (captionText) {
-      const pad = Math.max(36, vw * 0.036);
-      const fontSize = Math.max(48, Math.round(vh * 0.084));
-      ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
-      const maxW = vw * 0.88;
-      const lines = wrapText(ctx, captionText, maxW);
-      const lineH = fontSize * 1.35;
-      const boxH = lines.length * lineH + pad * 2;
-      const boxY = vh - boxH - pad * 2;
-      const boxX = (vw - maxW) / 2 - pad;
-
-      ctx.fillStyle = 'rgba(0,0,0,0.72)';
-      roundRect(ctx, boxX, boxY, maxW + pad * 2, boxH, 12);
-      ctx.fill();
-
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      lines.forEach((line, i) => {
-        ctx.fillText(line, vw / 2, boxY + pad + fontSize + i * lineH);
-      });
+      drawCaptionOnCanvas(ctx, captionText, vw, vh);
     }
 
     rafId = requestAnimationFrame(drawFrame);
@@ -169,23 +152,6 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     setCaptureAsMain,
     getPip: () => ({ webcam: { ...webcamPip }, capture: { ...capturePip } }),
   };
-}
-
-function wrapText(ctx, text, maxWidth) {
-  const words = text.split(/\s+/);
-  const lines = [];
-  let line = '';
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = test;
-    }
-  }
-  if (line) lines.push(line);
-  return lines.slice(0, 3);
 }
 
 function roundRect(ctx, x, y, w, h, r) {

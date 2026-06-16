@@ -175,6 +175,19 @@ export function downloadActionPlanPdf({ cues, meta = {}, jsPDF }) {
   doc.save(`${base}-action-plan.pdf`);
 }
 
+export function buildCaptionsMd(cues, meta = {}) {
+  const title = meta.title || 'Captions';
+  const lines = [`# ${title}`, ''];
+  if (!cues?.length) {
+    lines.push('_No speech captured._');
+    return lines.join('\n');
+  }
+  cues.forEach(c => {
+    lines.push(`**[${formatTs(c.start)}]** ${c.text}`);
+  });
+  return lines.join('\n');
+}
+
 export function buildVttFromCues(cues) {
   let out = 'WEBVTT\n\n';
   cues.forEach((c, i) => {
