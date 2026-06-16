@@ -212,8 +212,7 @@ export function getDisplayMediaOptions(_sourceValue, includeSystemAudio) {
       audio: !!includeSystemAudio,
     };
   }
-  // Tab mode uses the same picker as screen/window — full choice of screen, window, or tab.
-  // The Tab source only enables follow-along Document PiP (see isTabSource in app.js).
+  // Screen, window, and tab all use the same browser share picker.
   return {
     video: { cursor: 'always' },
     audio: !!includeSystemAudio,

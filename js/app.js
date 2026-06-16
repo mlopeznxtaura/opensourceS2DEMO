@@ -44,7 +44,7 @@ import {
   stopHdmiAudioMonitor,
   resumeAudioContexts,
   openMicStream,
-} from './platform.js?v=260611-tabmode';
+} from './platform.js?v=260611-pipall';
 
 const $ = id => document.getElementById(id);
 
@@ -111,7 +111,7 @@ const captureCardOptions = $('captureCardOptions');
 const captureCardPip = $('captureCardPip');
 const captureCardSizeSlider = $('captureCardSize');
 const captureCardSizeVal = $('captureCardSizeVal');
-const tabMigrateNote = $('tabMigrateNote');
+const pipNote = $('pipNote') || $('tabMigrateNote');
 const bgImageRow     = $('bgImageRow');
 const blurAmountRow  = $('blurAmountRow');
 const bgImageInput   = $('bgImageInput');
@@ -219,13 +219,8 @@ $('previewFullscreenBtn')?.addEventListener('click', async () => {
   }
 });
 
-function isTabSource() {
-  return document.querySelector('input[name="source"]:checked')?.value === 'tab';
-}
-
 function canUseDocumentPiP() {
-  return isTabSource()
-    && 'documentPictureInPicture' in window
+  return 'documentPictureInPicture' in window
     && (webcamToggle.checked || captionsToggle?.checked);
 }
 
@@ -309,15 +304,9 @@ async function enumerateDevices() {
 enumerateDevices();
 navigator.mediaDevices?.addEventListener?.('devicechange', enumerateDevices);
 
-// ── Capture source + tab migrate hint ───────────────
+// ── Capture source (screen / window / tab → same browser share picker) ──
 document.querySelectorAll('input[name="source"]').forEach(r => {
   r.addEventListener('change', async () => {
-    tabMigrateNote?.classList.toggle('hidden', !isTabSource());
-    if (!isTabSource()) {
-      closeDocumentPiP();
-      if (webcamToggle.checked) await syncWebcamPresentation();
-      return;
-    }
     if (webcamToggle.checked || captionsToggle?.checked) {
       if (canUseDocumentPiP()) await primeDocumentPiP();
       await syncWebcamPresentation();
@@ -997,11 +986,11 @@ captionsToggle?.addEventListener('change', async () => {
       micSelectRow.style.display = 'block';
     }
     if (captionStatus) captionStatus.textContent = 'Captions use your microphone during recording.';
-    if (isTabSource()) await primeDocumentPiP();
+    if (canUseDocumentPiP()) await primeDocumentPiP();
   } else if (captionStatus) {
     captionStatus.textContent = '';
   }
-  if (isTabSource()) await syncDocumentPiP();
+  if (canUseDocumentPiP()) await syncDocumentPiP();
 });
 
 function recordingClock() {
@@ -1661,8 +1650,8 @@ function getVideoBitrate() {
 }
 
 if (!supportsMediaRecorderPause()) pauseBtn.disabled = true;
-if ((isIOS || isSafari) && tabMigrateNote) {
-  tabMigrateNote.textContent = 'Safari/iOS: screen capture is limited — enable Webcam or Capture Card. Webcam PiP stays in-page on mobile.';
+if ((isIOS || isSafari) && pipNote) {
+  pipNote.textContent = 'Safari/iOS: screen capture is limited — enable Webcam or Capture Card. Drag the in-page webcam bubble to reposition.';
 }
 if ((isIOS || isSafari) && !supportsDisplayCapture()) {
   const note = $('safariNote');

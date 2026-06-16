@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260611-tabmode" />
+  <link rel="stylesheet" href="css/style.css?v=260611-pipall" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260611-tabmode</span>
+        <span class="build-badge" title="Deployed build">build 260611-pipall</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -56,7 +56,7 @@
               <span>Tab</span>
             </label>
           </div>
-          <p class="caption-note hidden" id="tabMigrateNote">Tab mode: same share picker as Screen (pick screen, window, or any tab). Webcam uses a follow-along PiP window when enabled.</p>
+          <p class="caption-note" id="pipNote">Screen, Window, and Tab open the same share dialog. Enable webcam for a follow-along PiP floater (Chrome/Edge), or drag the bubble in the preview.</p>
         </section>
 
         <section class="panel-section">
@@ -304,7 +304,7 @@
   <script src="/vendor/tfjs/tf.min.js"></script>
   <script src="/vendor/body-pix/body-pix.min.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260611-tabmode"></script>
+  <script type="module" src="js/app.js?v=260611-pipall"></script>
   <audio id="captureCardMonitor" class="hidden" playsinline></audio>
 </body>
 </html>
