@@ -750,12 +750,16 @@ html, body {
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.75);
   color: #fff;
-  font-size: clamp(30px, 2.8vmin, 48px);
+  font-size: clamp(18px, 2.2vmin, 28px);
   font-weight: 600;
   line-height: 1.35;
   text-align: center;
   pointer-events: none;
   z-index: 20;
+}
+
+.preview-container.is-recording .live-caption {
+  display: none !important;
 }
 
 /* Hidden utility */

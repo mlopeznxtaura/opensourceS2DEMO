@@ -69,6 +69,8 @@ let activeWebcamDeviceId = null;
 let livePreviewActive = false;
 let docPipWindow   = null;
 let docPipCaptionEl = null;
+let docPipVideoEl  = null;
+let docPipRootEl   = null;
 let skipWebcamPip  = false;
 let recordMimeType = '';
 let recordIntent   = { video: true, notesPlan: true, vtt: true };
@@ -311,7 +313,13 @@ navigator.mediaDevices?.addEventListener?.('devicechange', enumerateDevices);
 document.querySelectorAll('input[name="source"]').forEach(r => {
   r.addEventListener('change', async () => {
     tabMigrateNote?.classList.toggle('hidden', !isTabSource());
-    if (webcamToggle.checked) {
+    if (!isTabSource()) {
+      closeDocumentPiP();
+      syncPresentationSurfaces();
+      return;
+    }
+    if (webcamToggle.checked || captionsToggle?.checked) {
+      await primeDocumentPiP();
       await syncWebcamPresentation();
     }
   });
@@ -636,6 +644,7 @@ webcamToggle.addEventListener('change', async () => {
   if (webcamToggle.checked) {
     webcamOptions.style.display = 'flex';
     updateDualFeedWarning();
+    if (canUseDocumentPiP()) await primeDocumentPiP();
     await startWebcamPreview();
   } else {
     webcamOptions.style.display = 'none';
@@ -687,6 +696,7 @@ async function startWebcamPreview() {
     await syncWebcamPresentation();
     applyWebcamSize(parseInt(camSizeSlider.value));
     syncCompositorPip();
+    syncPresentationSurfaces();
     syncCompositorBackground();
     setStatus('ready', 'Ready');
     refreshLivePreview();
@@ -697,105 +707,166 @@ async function startWebcamPreview() {
   }
 }
 
+function isDocPipActive() {
+  return !!(docPipWindow && !docPipWindow.closed);
+}
+
+function isRecorderTabVisible() {
+  return document.visibilityState === 'visible';
+}
+
+/** Open Document PiP on a fresh user gesture before any await (camera / display picker). */
+async function primeDocumentPiP() {
+  if (!canUseDocumentPiP()) return false;
+  return openDocumentPiP();
+}
+
 async function syncWebcamPresentation() {
   await syncDocumentPiP();
 }
 
+function attachDocPipStream() {
+  if (!docPipVideoEl || !webcamStream) return;
+  if (docPipVideoEl.srcObject !== webcamStream) {
+    docPipVideoEl.srcObject = webcamStream;
+  }
+  docPipVideoEl.play().catch(() => {});
+}
+
+function syncDocPipContentVisibility() {
+  if (!isDocPipActive()) return;
+  const onRecorderTab = isRecorderTabVisible();
+  const doc = docPipWindow.document;
+  const wrap = doc.querySelector('.pip-webcam-wrap');
+  const cap = doc.querySelector('.pip-caption');
+  const hint = doc.querySelector('.pip-hint');
+  if (wrap) wrap.style.display = onRecorderTab ? 'none' : '';
+  if (cap) {
+    const showCap = !onRecorderTab && !!currentCaption;
+    cap.style.display = showCap ? '' : 'none';
+    cap.textContent = showCap ? currentCaption : '';
+  }
+  if (hint) hint.style.display = onRecorderTab ? 'none' : '';
+}
+
+function syncPresentationSurfaces() {
+  const pipLive = isDocPipActive();
+  const onRecorderTab = isRecorderTabVisible();
+  const recording = isRecordingActive();
+  const wantWebcam = webcamToggle.checked && webcamStream;
+
+  if (wantWebcam && pipLive && !onRecorderTab) {
+    attachDocPipStream();
+    webcamPip.classList.add('hidden');
+  } else if (wantWebcam && !recording) {
+    webcamPip.srcObject = webcamStream;
+    webcamPip.classList.remove('hidden');
+    applyWebcamPos(webcamPos);
+  } else if (wantWebcam && recording) {
+    webcamPip.classList.add('hidden');
+  } else {
+    webcamPip.classList.add('hidden');
+  }
+
+  syncDocPipContentVisibility();
+}
+
 function syncDocPipCaption(text) {
-  if (docPipCaptionEl) docPipCaptionEl.textContent = text || '';
+  if (!docPipCaptionEl) return;
+  const show = text && isDocPipActive() && !isRecorderTabVisible();
+  docPipCaptionEl.textContent = show ? text : '';
+  docPipCaptionEl.style.display = show ? '' : 'none';
 }
 
 async function syncDocumentPiP() {
   if (!canUseDocumentPiP()) {
     closeDocumentPiP();
-    if (webcamToggle.checked && webcamStream) {
-      webcamPip.srcObject = webcamStream;
-      webcamPip.classList.remove('hidden');
-      applyWebcamPos(webcamPos);
-    }
+    syncPresentationSurfaces();
     return;
   }
   const opened = await openDocumentPiP();
-  if (opened) {
-    webcamPip.classList.add('hidden');
-  } else {
+  if (!opened) {
     closeDocumentPiP();
-    if (webcamToggle.checked && webcamStream) {
-      webcamPip.srcObject = webcamStream;
-      webcamPip.classList.remove('hidden');
-      applyWebcamPos(webcamPos);
-    }
   }
+  syncPresentationSurfaces();
   syncDocPipCaption(currentCaption);
 }
 
 async function openDocumentPiP() {
   if (!window.documentPictureInPicture?.requestWindow) return false;
-  const wantWebcam = webcamToggle.checked && webcamStream;
+  const wantWebcam = webcamToggle.checked;
   const wantCaptions = captionsToggle?.checked;
   if (!wantWebcam && !wantCaptions) return false;
 
   try {
-    closeDocumentPiP();
-    const size = parseInt(camSizeSlider.value, 10) || 320;
-    const captionH = wantCaptions ? 80 : 0;
-    let width = size;
-    let height = size;
-    if (wantWebcam && wantCaptions) {
-      width = Math.max(size, 300);
-      height = size + captionH;
-    } else if (wantCaptions) {
-      width = 360;
-      height = captionH + 28;
-    }
+    if (!isDocPipActive()) {
+      const size = parseInt(camSizeSlider.value, 10) || 320;
+      const captionH = wantCaptions ? 80 : 0;
+      let width = size;
+      let height = size;
+      if (wantWebcam && wantCaptions) {
+        width = Math.max(size, 300);
+        height = size + captionH;
+      } else if (wantCaptions) {
+        width = 360;
+        height = captionH + 28;
+      }
 
-    docPipWindow = await documentPictureInPicture.requestWindow({ width, height });
-    const doc = docPipWindow.document;
-    docPipCaptionEl = null;
-    doc.body.style.cssText = 'margin:0;overflow:hidden;height:100%';
-
-    const style = doc.createElement('style');
-    style.textContent = pipCaptionCss(15);
-    doc.head.append(style);
-
-    const root = doc.createElement('div');
-    root.className = 'pip-root' + (wantCaptions && !wantWebcam ? ' pip-caption-only' : '');
-
-    if (wantWebcam) {
-      const wrap = doc.createElement('div');
-      wrap.className = 'pip-webcam-wrap';
-      const video = doc.createElement('video');
-      video.srcObject = webcamStream;
-      video.autoplay = true;
-      video.muted = true;
-      video.playsInline = true;
-      wrap.appendChild(video);
-      root.appendChild(wrap);
-    }
-
-    if (wantCaptions) {
-      const cap = doc.createElement('div');
-      cap.className = 'pip-caption';
-      cap.textContent = currentCaption || '';
-      docPipCaptionEl = cap;
-      root.appendChild(cap);
-    }
-
-    const hint = doc.createElement('div');
-    hint.className = 'pip-hint';
-    hint.textContent = 'Follows your active tab';
-    root.appendChild(hint);
-
-    doc.body.appendChild(root);
-    docPipWindow.addEventListener('pagehide', () => {
-      docPipWindow = null;
+      docPipWindow = await documentPictureInPicture.requestWindow({ width, height });
+      const doc = docPipWindow.document;
       docPipCaptionEl = null;
-    });
+      docPipVideoEl = null;
+      docPipRootEl = null;
+      doc.body.style.cssText = 'margin:0;overflow:hidden;height:100%';
+
+      const style = doc.createElement('style');
+      style.textContent = pipCaptionCss(15);
+      doc.head.append(style);
+
+      const root = doc.createElement('div');
+      root.className = 'pip-root' + (wantCaptions && !wantWebcam ? ' pip-caption-only' : '');
+      docPipRootEl = root;
+
+      if (wantWebcam) {
+        const wrap = doc.createElement('div');
+        wrap.className = 'pip-webcam-wrap';
+        const video = doc.createElement('video');
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        wrap.appendChild(video);
+        root.appendChild(wrap);
+        docPipVideoEl = video;
+      }
+
+      if (wantCaptions) {
+        const cap = doc.createElement('div');
+        cap.className = 'pip-caption';
+        docPipCaptionEl = cap;
+        root.appendChild(cap);
+      }
+
+      const hint = doc.createElement('div');
+      hint.className = 'pip-hint';
+      hint.textContent = 'Follows your active tab';
+      root.appendChild(hint);
+
+      doc.body.appendChild(root);
+      docPipWindow.addEventListener('pagehide', () => {
+        docPipWindow = null;
+        docPipCaptionEl = null;
+        docPipVideoEl = null;
+        docPipRootEl = null;
+        syncPresentationSurfaces();
+      });
+    }
+
+    attachDocPipStream();
+    syncDocPipContentVisibility();
     return true;
   } catch (e) {
     console.warn('Document PiP unavailable:', e);
-    docPipWindow = null;
-    docPipCaptionEl = null;
+    closeDocumentPiP();
     return false;
   }
 }
@@ -806,6 +877,8 @@ function closeDocumentPiP() {
   }
   docPipWindow = null;
   docPipCaptionEl = null;
+  docPipVideoEl = null;
+  docPipRootEl = null;
 }
 
 function closeWebcamDocumentPiP() {
@@ -836,7 +909,6 @@ function applyWebcamPos(pos) {
   webcamPip.style.left = webcamPip.style.top = webcamPip.style.right = webcamPip.style.bottom = 'auto';
   webcamPip.className = webcamPip.className.replace(/pos-\S+/g, '').trim();
   webcamPip.classList.add(`pos-${pos}`);
-  webcamPip.classList.remove('hidden');
   syncCompositorPip();
 }
 
@@ -960,6 +1032,7 @@ captionsToggle?.addEventListener('change', async () => {
       micSelectRow.style.display = 'block';
     }
     if (captionStatus) captionStatus.textContent = 'Captions use your microphone during recording.';
+    if (isTabSource()) await primeDocumentPiP();
   } else if (captionStatus) {
     captionStatus.textContent = '';
   }
@@ -977,7 +1050,6 @@ function recordingClock() {
 function updateLiveCaption(text) {
   currentCaption = text || '';
   const recording = isRecordingActive();
-  const pipOpen = docPipWindow && !docPipWindow.closed;
 
   if (recording) {
     compositor.setCaption(currentCaption);
@@ -985,21 +1057,12 @@ function updateLiveCaption(text) {
     compositor.setCaption('');
   }
 
-  if (recording && pipOpen) {
+  if (recording || (isDocPipActive() && isTabSource() && !isRecorderTabVisible())) {
     if (liveCaption) {
       liveCaption.classList.add('hidden');
       liveCaption.textContent = '';
     }
-    syncDocPipCaption(currentCaption);
-    return;
-  }
-
-  if (recording) {
-    if (liveCaption) {
-      liveCaption.classList.add('hidden');
-      liveCaption.textContent = '';
-    }
-    syncDocPipCaption('');
+    syncDocPipCaption(recording ? currentCaption : '');
     return;
   }
 
@@ -1081,7 +1144,8 @@ function startCaptions() {
   try {
     recognition.start();
     if (captionStatus) captionStatus.textContent = 'Captions active — listening…';
-    if (canUseDocumentPiP()) syncDocumentPiP();
+    if (canUseDocumentPiP()) void syncDocumentPiP();
+    syncPresentationSurfaces();
   } catch (err) {
     console.warn('Could not start captions:', err);
     captionsActive = false;
@@ -1150,7 +1214,7 @@ function applyRecordIntent() {
   }
 }
 
-$('intentConfirm')?.addEventListener('click', () => {
+$('intentConfirm')?.addEventListener('click', async () => {
   const any = $('intentVideo')?.checked || $('intentNotesPlan')?.checked || $('intentVtt')?.checked;
   if (!any) {
     alert('Select at least one: video, meeting notes/action plan, or captions.');
@@ -1158,7 +1222,8 @@ $('intentConfirm')?.addEventListener('click', () => {
   }
   applyRecordIntent();
   hideRecordIntentModal();
-  startRecording();
+  if (canUseDocumentPiP()) await primeDocumentPiP();
+  await startRecording();
 });
 
 $('intentCancel')?.addEventListener('click', hideRecordIntentModal);
@@ -1222,6 +1287,7 @@ async function startRecording() {
     recordMimeType = '';
     skipWebcamPip = false;
     syncCompositorBackground();
+    previewContainer?.classList.add('is-recording');
 
     const sourceValue = document.querySelector('input[name="source"]:checked').value;
     const audioTracks = [];
@@ -1302,7 +1368,8 @@ async function startRecording() {
       webcamCapture.srcObject = webcamStream;
       await playVideo(webcamCapture);
       await waitForVideoFrame(webcamCapture);
-      await syncWebcamPresentation();
+      attachDocPipStream();
+      syncPresentationSurfaces();
       syncCompositorPip();
     }
 
@@ -1548,6 +1615,7 @@ function cleanup() {
   stopHdmiAudioMonitor();
   compositor?.stop();
   closeDocumentPiP();
+  previewContainer?.classList.remove('is-recording');
   skipWebcamPip = false;
   recordMimeType = '';
   const sharedCapture = !!(captureCardStream && screenStream && captureCardStream === screenStream);
@@ -1629,3 +1697,8 @@ if ((isIOS || isSafari) && !supportsDisplayCapture()) {
 }
 
 setStatus('', 'Ready');
+
+document.addEventListener('visibilitychange', () => {
+  syncPresentationSurfaces();
+  if (currentCaption) updateLiveCaption(currentCaption);
+});
