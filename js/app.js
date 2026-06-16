@@ -12,6 +12,11 @@ import {
   mergeExportCues,
 } from './plan-export.js';
 import { loadSessionBackground } from './webcam-bg.js';
+import {
+  startSegmentationLoop,
+  stopSegmentationLoop,
+  disposeSegmenter,
+} from './segmentation.js';
 import { resetSession } from './session.js';
 import {
   isIOS,
@@ -516,6 +521,17 @@ function syncCompositorBackground() {
     bgImage: getBgMode() === 'image' ? sessionBgImage : null,
     blurPx: parseInt($('blurAmount')?.value || '18', 10),
   });
+  syncWebcamSegmentation();
+}
+
+function syncWebcamSegmentation() {
+  const mode = getBgMode();
+  const useSeg = webcamToggle.checked && (mode === 'blur' || mode === 'image');
+  if (useSeg && webcamCapture.srcObject && webcamCapture.videoWidth > 0) {
+    startSegmentationLoop(webcamCapture);
+  } else {
+    stopSegmentationLoop();
+  }
 }
 
 document.querySelectorAll('input[name="bgMode"]').forEach(r => {
@@ -577,6 +593,7 @@ function wipeSession() {
     fileInputs: [bgImageInput],
   });
   syncCompositorBackground();
+  disposeSegmenter();
 }
 
 // ── Webcam toggle ──────────────────────────────────
@@ -705,6 +722,7 @@ function closeWebcamDocumentPiP() {
 
 function stopWebcamPreview() {
   closeWebcamDocumentPiP();
+  stopSegmentationLoop();
   stopWebcamTracks();
   webcamPip.srcObject = null;
   webcamCapture.srcObject = null;
@@ -1440,7 +1458,10 @@ function cleanup() {
       startCaptureCardPreview().catch(() => {});
     } else if (webcamToggle.checked && webcamStream) {
       webcamCapture.srcObject = webcamStream;
-      playVideo(webcamCapture).then(() => refreshLivePreview()).catch(() => {});
+      playVideo(webcamCapture).then(() => {
+        syncCompositorBackground();
+        refreshLivePreview();
+      }).catch(() => {});
     }
   }
 }

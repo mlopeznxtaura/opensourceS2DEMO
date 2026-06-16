@@ -1,8 +1,8 @@
-/* Webcam PiP background — blur or static image (session-only, in-memory). */
+/* Webcam PiP — blur/image background with MediaPipe person mask when available. */
 
-/**
- * @typedef {'none'|'blur'|'image'} BgMode
- */
+import { getSegmentationMaskCanvas, isSegmentationMaskReady } from './segmentation.js';
+
+let personBuf = null;
 
 function bufferScale(video, dim) {
   const vw = video.videoWidth || 640;
@@ -11,14 +11,22 @@ function bufferScale(video, dim) {
   return Math.min(2.5, Math.max(1.5, side / Math.max(dim, 1)));
 }
 
-/** Crop biased upward so the face sits in the middle of the PiP. */
-function faceVideoCrop(video) {
+function squareVideoCrop(video) {
   const vw = video.videoWidth || 640;
   const vh = video.videoHeight || 480;
   const side = Math.min(vw, vh);
   const sx = (vw - side) / 2;
-  const sy = Math.max(0, (vh - side) * 0.22);
-  return { sx, sy, side: Math.min(side, vh - sy) };
+  const sy = (vh - side) / 2;
+  return { sx, sy, side };
+}
+
+function getPersonBuf(dim) {
+  if (!personBuf || personBuf.width !== dim) {
+    personBuf = document.createElement('canvas');
+    personBuf.width = dim;
+    personBuf.height = dim;
+  }
+  return personBuf;
 }
 
 /**
@@ -41,10 +49,18 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
 
   if (mode === 'image' && bgImage && bgImage.complete && bgImage.naturalWidth) {
     drawCover(ctx, bgImage, x, y, dim, dim);
-    drawFaceCutout(ctx, video, x, y, dim);
+    if (isSegmentationMaskReady()) {
+      drawSegmentedPerson(ctx, video, x, y, dim);
+    } else {
+      drawLoadingPerson(ctx, video, x, y, dim);
+    }
   } else if (mode === 'blur') {
     drawBlurredFill(ctx, video, x, y, dim, blurPx);
-    drawFaceCutout(ctx, video, x, y, dim);
+    if (isSegmentationMaskReady()) {
+      drawSegmentedPerson(ctx, video, x, y, dim);
+    } else {
+      drawLoadingPerson(ctx, video, x, y, dim);
+    }
   } else {
     drawSharpSquare(ctx, video, x, y, dim);
   }
@@ -59,11 +75,10 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
 }
 
 function drawSharpSquare(ctx, video, x, y, dim) {
-  const { sx, sy, side } = faceVideoCrop(video);
+  const { sx, sy, side } = squareVideoCrop(video);
   ctx.drawImage(video, sx, sy, side, side, x, y, dim, dim);
 }
 
-/** Entire circle — only blurred pixels, no sharp room visible. */
 function drawBlurredFill(ctx, video, x, y, dim, blurPx) {
   const scale = bufferScale(video, dim);
   const buf = Math.round(dim * scale);
@@ -71,14 +86,10 @@ function drawBlurredFill(ctx, video, x, y, dim, blurPx) {
   off.width = buf;
   off.height = buf;
   const octx = off.getContext('2d');
-  const { sx, sy, side } = faceVideoCrop(video);
-  const zoom = 1.25;
-  const z = side * zoom;
-  const zx = sx - (z - side) / 2;
-  const zy = sy - (z - side) * 0.35;
-  const blurAmt = Math.max(12, blurPx * (buf / dim) * 0.85);
+  const { sx, sy, side } = squareVideoCrop(video);
+  const blurAmt = Math.max(14, blurPx * (buf / dim) * 0.9);
   octx.filter = `blur(${blurAmt}px) saturate(1.05)`;
-  octx.drawImage(video, zx, zy, z, z, 0, 0, buf, buf);
+  octx.drawImage(video, sx, sy, side, side, 0, 0, buf, buf);
   octx.filter = 'none';
   ctx.drawImage(off, x, y, dim, dim);
 }
@@ -101,36 +112,38 @@ function drawCover(ctx, img, x, y, w, h) {
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-/** Small sharp face island — hard edge, no soft ring exposing the room. */
-function drawFaceCutout(ctx, video, x, y, dim) {
-  const faceCx = x + dim / 2;
-  const faceCy = y + dim / 2 - dim * 0.05;
-  const rx = dim * 0.2;
-  const ry = dim * 0.24;
+/** Person cutout from MediaPipe mask — body/face tracked, room hidden. */
+function drawSegmentedPerson(ctx, video, x, y, dim) {
+  const mask = getSegmentationMaskCanvas();
+  if (!mask || !video.videoWidth) return;
 
-  const scale = bufferScale(video, dim);
-  const bufSize = Math.round(dim * scale);
-  const { sx, sy, side } = faceVideoCrop(video);
-  const zoom = 1.22;
-  const z = side / zoom;
-  const zx = sx + (side - z) / 2;
-  const zy = sy + (side - z) * 0.15;
-
-  const off = document.createElement('canvas');
-  off.width = bufSize;
-  off.height = bufSize;
-  const octx = off.getContext('2d');
+  const { sx, sy, side } = squareVideoCrop(video);
+  const buf = getPersonBuf(dim);
+  const octx = buf.getContext('2d');
+  octx.clearRect(0, 0, dim, dim);
   octx.imageSmoothingEnabled = true;
   octx.imageSmoothingQuality = 'high';
-  octx.drawImage(video, zx, zy, z, z, 0, 0, bufSize, bufSize);
+  octx.drawImage(video, sx, sy, side, side, 0, 0, dim, dim);
+  octx.globalCompositeOperation = 'destination-in';
+  octx.drawImage(mask, sx, sy, side, side, 0, 0, dim, dim);
+  octx.globalCompositeOperation = 'source-over';
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(faceCx, faceCy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.clip();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(off, x, y, dim, dim);
+  ctx.drawImage(buf, x, y);
+}
+
+/** Brief fallback while the segmenter model loads (~1–2s). */
+function drawLoadingPerson(ctx, video, x, y, dim) {
+  drawBlurredFill(ctx, video, x, y, dim, 22);
+  const faceCx = x + dim / 2;
+  const faceCy = y + dim / 2 - dim * 0.04;
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(faceCx, faceCy, dim * 0.17, dim * 0.2, 0, 0, Math.PI * 2);
+  ctx.clip();
+  const { sx, sy, side } = squareVideoCrop(video);
+  ctx.drawImage(video, sx, sy, side, side, x, y, dim, dim);
   ctx.restore();
 }
 
