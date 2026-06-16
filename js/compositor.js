@@ -11,6 +11,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
   let captureEnabled = false;
   let captureAsMain = false;
   let captionText = '';
+  let webcamOnCanvas = true;
   let webcamBg = { mode: 'none', bgImage: null, blurPx: 18 };
 
   function setWebcamBackground(opts) {
@@ -47,6 +48,10 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
       y: (p.top - c.top + p.height / 2) / c.height,
       size: Math.max(0.06, Math.min(0.35, size)),
     };
+  }
+
+  function setWebcamOnCanvas(on) {
+    webcamOnCanvas = on !== false;
   }
 
   function setCaption(text) {
@@ -106,7 +111,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
       ctx.stroke();
     }
 
-    const camOn = webcamVideo && webcamVideo.srcObject && webcamVideo.readyState >= 2;
+    const camOn = webcamOnCanvas && webcamVideo && webcamVideo.srcObject && webcamVideo.readyState >= 2;
     if (camOn && webcamVideo.videoWidth > 0) {
       const dim = Math.min(vw, vh) * webcamPip.size;
       const cx = webcamPip.x * vw;
@@ -147,6 +152,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     stop,
     setPipFromElement,
     setCaption,
+    setWebcamOnCanvas,
     setWebcamBackground,
     setCaptureEnabled,
     setCaptureAsMain,
