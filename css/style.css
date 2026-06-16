@@ -566,8 +566,8 @@ html, body {
   box-shadow: 0 4px 24px rgba(0,0,0,0.6);
   transition: all 0.3s ease;
   cursor: move;
-  width: 160px;
-  height: 160px;
+  width: 320px;
+  height: 320px;
   user-select: none;
   z-index: 15;
 }

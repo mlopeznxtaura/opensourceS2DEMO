@@ -5,7 +5,7 @@ import { drawWebcamWithBackground } from './webcam-bg.js';
 export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, canvas }) {
   const ctx = canvas.getContext('2d');
   let rafId = null;
-  let webcamPip = { x: 0.82, y: 0.82, size: 0.14 };
+  let webcamPip = { x: 0.82, y: 0.82, size: 0.28 };
   let capturePip = { x: 0.18, y: 0.82, w: 0.28, h: 0.16 };
   let captureEnabled = false;
   let captionText = '';

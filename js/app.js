@@ -409,7 +409,7 @@ async function openWebcamDocumentPiP() {
   if (!window.documentPictureInPicture?.requestWindow || !webcamStream) return false;
   try {
     closeWebcamDocumentPiP();
-    const size = parseInt(camSizeSlider.value, 10) || 160;
+    const size = parseInt(camSizeSlider.value, 10) || 320;
     docPipWindow = await documentPictureInPicture.requestWindow({
       width: size,
       height: size,
@@ -521,8 +521,8 @@ document.addEventListener('touchmove', e => {
   const container = previewContainer.getBoundingClientRect();
   let x = t.clientX - container.left - dragOffX;
   let y = t.clientY - container.top  - dragOffY;
-  const w = parseInt(dragTarget.style.width, 10) || dragTarget.offsetWidth || 160;
-  const h = parseInt(dragTarget.style.height, 10) || dragTarget.offsetHeight || 160;
+  const w = parseInt(dragTarget.style.width, 10) || dragTarget.offsetWidth || 320;
+  const h = parseInt(dragTarget.style.height, 10) || dragTarget.offsetHeight || 320;
   x = Math.max(0, Math.min(x, container.width  - w));
   y = Math.max(0, Math.min(y, container.height - h));
   dragTarget.style.left   = x + 'px';
@@ -548,8 +548,8 @@ document.addEventListener('mousemove', e => {
   const container = previewContainer.getBoundingClientRect();
   let x = e.clientX - container.left - dragOffX;
   let y = e.clientY - container.top  - dragOffY;
-  const w = parseInt(dragTarget.style.width, 10) || dragTarget.offsetWidth || 160;
-  const h = parseInt(dragTarget.style.height, 10) || dragTarget.offsetHeight || 160;
+  const w = parseInt(dragTarget.style.width, 10) || dragTarget.offsetWidth || 320;
+  const h = parseInt(dragTarget.style.height, 10) || dragTarget.offsetHeight || 320;
   x = Math.max(0, Math.min(x, container.width  - w));
   y = Math.max(0, Math.min(y, container.height - h));
   dragTarget.style.left   = x + 'px';
