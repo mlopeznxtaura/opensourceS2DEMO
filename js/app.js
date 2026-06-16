@@ -44,7 +44,7 @@ import {
   stopHdmiAudioMonitor,
   resumeAudioContexts,
   openMicStream,
-} from './platform.js?v=260611-tabpick';
+} from './platform.js?v=260611-tabmode';
 
 const $ = id => document.getElementById(id);
 

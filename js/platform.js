@@ -205,21 +205,17 @@ export async function getUserMediaVideo(deviceId, { audio = false } = {}) {
   throw lastErr || new Error('Could not open video device');
 }
 
-export function getDisplayMediaOptions(sourceValue, includeSystemAudio) {
+export function getDisplayMediaOptions(_sourceValue, includeSystemAudio) {
   if (isSafari || isIOS) {
     return {
       video: true,
       audio: !!includeSystemAudio,
     };
   }
-  const video = { cursor: 'always' };
-  // Hint tab capture without preferCurrentTab — that flag locks the picker to this
-  // page only and prevents choosing another tab (breaks tab-follow + PiP workflow).
-  if (sourceValue === 'tab') {
-    video.displaySurface = 'browser';
-  }
+  // Tab mode uses the same picker as screen/window — full choice of screen, window, or tab.
+  // The Tab source only enables follow-along Document PiP (see isTabSource in app.js).
   return {
-    video,
+    video: { cursor: 'always' },
     audio: !!includeSystemAudio,
   };
 }
