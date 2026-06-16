@@ -16,6 +16,9 @@ import {
   startSegmentationLoop,
   stopSegmentationLoop,
   disposeSegmenter,
+  setSegmentationOptions,
+  getSegmentationStatus,
+  isSegmentationMaskReady,
 } from './segmentation.js';
 import { resetSession } from './session.js';
 import {
@@ -527,10 +530,26 @@ function syncCompositorBackground() {
 function syncWebcamSegmentation() {
   const mode = getBgMode();
   const useSeg = webcamToggle.checked && (mode === 'blur' || mode === 'image');
+  setSegmentationOptions({
+    mode: useSeg ? mode : 'none',
+    bgImage: mode === 'image' ? sessionBgImage : null,
+    blurPx: parseInt($('blurAmount')?.value || '14', 10),
+  });
+  const statusEl = $('segStatus');
   if (useSeg && webcamCapture.srcObject && webcamCapture.videoWidth > 0) {
     startSegmentationLoop(webcamCapture);
   } else {
     stopSegmentationLoop();
+    if (statusEl) statusEl.textContent = '';
+    return;
+  }
+  if (statusEl) {
+    const tick = () => {
+      if (!webcamToggle.checked || (mode !== 'blur' && mode !== 'image')) return;
+      statusEl.textContent = getSegmentationStatus();
+      if (!isSegmentationMaskReady()) requestAnimationFrame(tick);
+    };
+    tick();
   }
 }
 

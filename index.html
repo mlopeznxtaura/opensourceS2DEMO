@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260617-segment" />
+  <link rel="stylesheet" href="css/style.css?v=260617-vbg" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260617-segment</span>
+        <span class="build-badge" title="Deployed build">build 260617-vbg</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -174,7 +174,8 @@
                 <input type="range" id="blurAmount" min="6" max="22" value="12" class="size-slider" />
                 <span class="size-val" id="blurAmountVal">12px</span>
               </div>
-              <p class="caption-note">Blur/Image uses AI face/body tracking — your room is hidden behind you (Chrome/Edge).</p>
+              <p class="caption-note">Blur/Image removes your room — AI tracks your body each frame (like Broadcast, no NVIDIA needed).</p>
+              <p class="caption-status" id="segStatus"></p>
             </div>
           </div>
         </section>
@@ -301,7 +302,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260617-segment"></script>
+  <script type="module" src="js/app.js?v=260617-vbg"></script>
   <audio id="captureCardMonitor" class="hidden" playsinline></audio>
 </body>
 </html>
