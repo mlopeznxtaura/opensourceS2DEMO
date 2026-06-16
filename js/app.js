@@ -44,7 +44,7 @@ import {
   stopHdmiAudioMonitor,
   resumeAudioContexts,
   openMicStream,
-} from './platform.js?v=260611-pipall';
+} from './platform.js?v=260611-pipdrag';
 
 const $ = id => document.getElementById(id);
 
@@ -153,17 +153,14 @@ function syncLivePreviewLayout() {
 function updatePreviewDomVisibility() {
   const live = livePreviewActive && shouldRunLivePreview();
   const captureMain = isCaptureMainPreview();
-  const bgMode = getBgMode();
 
   if (live) {
     captureCardPip.classList.toggle('hidden', captureMain);
     captureCardPip.classList.toggle('pip-ghost', !captureMain);
-    webcamPip.classList.toggle('pip-ghost', bgMode !== 'none');
-    if (webcamToggle.checked) webcamPip.classList.remove('hidden');
   } else {
     captureCardPip.classList.remove('pip-ghost');
-    webcamPip.classList.remove('pip-ghost');
   }
+  if (webcamToggle.checked) syncWebcamPipChrome();
 }
 
 function startLivePreview() {
@@ -699,6 +696,30 @@ function isDocPipActive() {
   return !!(docPipWindow && !docPipWindow.closed);
 }
 
+function isDocPipWebcamActive() {
+  return isDocPipActive() && webcamToggle.checked;
+}
+
+/** In-page bubble: visible, ghost (blur), or dashed handle (Document PiP open) — always draggable. */
+function syncWebcamPipChrome() {
+  if (!webcamToggle.checked || !webcamStream) {
+    webcamPip.classList.add('hidden');
+    webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
+    return;
+  }
+  const ghostForBg = getBgMode() !== 'none';
+  const handleForDocPip = isDocPipWebcamActive();
+  webcamPip.classList.remove('hidden');
+  if (ghostForBg) {
+    webcamPip.classList.add('pip-ghost');
+    webcamPip.classList.remove('pip-position-handle');
+  } else if (handleForDocPip) {
+    webcamPip.classList.add('pip-ghost', 'pip-position-handle');
+  } else {
+    webcamPip.classList.remove('pip-ghost', 'pip-position-handle');
+  }
+}
+
 /** Open Document PiP on a fresh user gesture before any await (camera / display picker). */
 async function primeDocumentPiP() {
   if (!canUseDocumentPiP()) return false;
@@ -726,21 +747,23 @@ async function syncDocumentPiP() {
     closeDocumentPiP();
     if (webcamToggle.checked && webcamStream) {
       webcamPip.srcObject = webcamStream;
-      webcamPip.classList.remove('hidden');
+      syncWebcamPipChrome();
       applyWebcamPos(webcamPos);
     }
     return;
   }
   const opened = await openDocumentPiP();
-  if (opened) {
-    webcamPip.classList.add('hidden');
-  } else {
+  if (!opened) {
     closeDocumentPiP();
     if (webcamToggle.checked && webcamStream) {
       webcamPip.srcObject = webcamStream;
-      webcamPip.classList.remove('hidden');
+      syncWebcamPipChrome();
       applyWebcamPos(webcamPos);
     }
+  } else if (webcamToggle.checked && webcamStream) {
+    webcamPip.srcObject = webcamStream;
+    syncWebcamPipChrome();
+    syncCompositorPip();
   }
   syncDocPipCaption(currentCaption);
 }
@@ -812,6 +835,8 @@ async function openDocumentPiP() {
         docPipCaptionEl = null;
         docPipVideoEl = null;
         docPipRootEl = null;
+        syncWebcamPipChrome();
+        syncCompositorPip();
       });
     }
 
@@ -861,8 +886,8 @@ document.querySelectorAll('#webcamOptions .position-buttons .pos-btn').forEach(b
 function applyWebcamPos(pos) {
   webcamPip.style.left = webcamPip.style.top = webcamPip.style.right = webcamPip.style.bottom = 'auto';
   webcamPip.className = webcamPip.className.replace(/pos-\S+/g, '').trim();
-  webcamPip.classList.add(`pos-${pos}`);
-  webcamPip.classList.remove('hidden');
+  webcamPip.classList.add(`pos-${pos}`, 'webcam-pip');
+  syncWebcamPipChrome();
   syncCompositorPip();
 }
 

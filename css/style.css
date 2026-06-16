@@ -568,6 +568,14 @@ html, body {
   pointer-events: auto;
 }
 
+/* Draggable positioning handle when follow-along Document PiP shows the live feed */
+.webcam-pip.pip-position-handle {
+  opacity: 0.45 !important;
+  border: 2px dashed rgba(91, 224, 255, 0.85);
+  box-shadow: none;
+  cursor: move;
+}
+
 #screenPreview {
   max-width: 100%;
   max-height: 100%;
