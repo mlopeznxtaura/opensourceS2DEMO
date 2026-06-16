@@ -21,8 +21,11 @@ export function prepareVideoElement(video) {
   if (!video) return;
   video.muted = true;
   video.playsInline = true;
+  video.controls = false;
+  video.disablePictureInPicture = true;
   video.setAttribute('playsinline', '');
   video.setAttribute('webkit-playsinline', '');
+  video.setAttribute('disablepictureinpicture', '');
 }
 
 export async function playVideo(video) {

@@ -1,4 +1,4 @@
-/* Webcam PiP — virtual background from pre-composited BodyPix output. */
+/* Webcam PiP — virtual background from BodyPix compositor output. */
 
 import { getCompositedWebcamCanvas, isSegmentationMaskReady } from './segmentation.js';
 
@@ -18,9 +18,6 @@ function squareVideoCrop(video) {
  */
 export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
   const mode = opts.mode || 'none';
-  const bgImage = opts.bgImage || null;
-  const blurPx = opts.blurPx ?? 14;
-
   const cx = x + dim / 2;
   const cy = y + dim / 2;
   const r = dim / 2;
@@ -38,7 +35,8 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(comp, x, y, dim, dim);
     } else {
-      drawBlurredPlaceholder(ctx, video, x, y, dim, blurPx);
+      const { sx, sy, side } = squareVideoCrop(video);
+      ctx.drawImage(video, sx, sy, side, side, x, y, dim, dim);
     }
   } else {
     const { sx, sy, side } = squareVideoCrop(video);
@@ -52,20 +50,6 @@ export function drawWebcamWithBackground(ctx, video, x, y, dim, opts = {}) {
   ctx.beginPath();
   ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
   ctx.stroke();
-}
-
-/** Full-circle blur while AI model loads — never shows sharp room. */
-function drawBlurredPlaceholder(ctx, video, x, y, dim, blurPx) {
-  const buf = Math.round(dim * 1.5);
-  const off = document.createElement('canvas');
-  off.width = buf;
-  off.height = buf;
-  const octx = off.getContext('2d');
-  const { sx, sy, side } = squareVideoCrop(video);
-  octx.filter = `blur(${Math.max(16, blurPx * 1.6)}px)`;
-  octx.drawImage(video, sx, sy, side, side, 0, 0, buf, buf);
-  octx.filter = 'none';
-  ctx.drawImage(off, x, y, dim, dim);
 }
 
 export function loadSessionBackground(file) {

@@ -19,6 +19,7 @@ import {
   setSegmentationOptions,
   getSegmentationStatus,
   isSegmentationMaskReady,
+  getSegmentationError,
 } from './segmentation.js';
 import { resetSession } from './session.js';
 import {
@@ -546,7 +547,8 @@ function syncWebcamSegmentation() {
   if (statusEl) {
     const tick = () => {
       if (!webcamToggle.checked || (mode !== 'blur' && mode !== 'image')) return;
-      statusEl.textContent = getSegmentationStatus();
+      statusEl.textContent = getSegmentationStatus()
+        + (getSegmentationError() ? ` (${getSegmentationError()})` : '');
       if (!isSegmentationMaskReady()) requestAnimationFrame(tick);
     };
     tick();
