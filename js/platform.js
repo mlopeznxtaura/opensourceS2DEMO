@@ -212,12 +212,16 @@ export function getDisplayMediaOptions(sourceValue, includeSystemAudio) {
       audio: !!includeSystemAudio,
     };
   }
-  const opts = {
-    video: { cursor: 'always' },
+  const video = { cursor: 'always' };
+  // Hint tab capture without preferCurrentTab — that flag locks the picker to this
+  // page only and prevents choosing another tab (breaks tab-follow + PiP workflow).
+  if (sourceValue === 'tab') {
+    video.displaySurface = 'browser';
+  }
+  return {
+    video,
     audio: !!includeSystemAudio,
   };
-  if (sourceValue === 'tab') opts.preferCurrentTab = true;
-  return opts;
 }
 
 export function getRecorderMimeTypes() {
