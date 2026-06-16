@@ -12,16 +12,6 @@ import {
   mergeExportCues,
 } from './plan-export.js';
 import { pipCaptionCss } from './caption-style.js';
-import { loadSessionBackground } from './webcam-bg.js';
-import {
-  startSegmentationLoop,
-  stopSegmentationLoop,
-  disposeSegmenter,
-  setSegmentationOptions,
-  getSegmentationStatus,
-  isSegmentationMaskReady,
-  getSegmentationError,
-} from './segmentation.js';
 import { resetSession } from './session.js';
 import {
   isIOS,
@@ -44,7 +34,7 @@ import {
   stopHdmiAudioMonitor,
   resumeAudioContexts,
   openMicStream,
-} from './platform.js?v=260611-piponly';
+} from './platform.js?v=260611-nobg';
 
 const $ = id => document.getElementById(id);
 
@@ -74,10 +64,6 @@ let docPipRootEl   = null;
 let skipWebcamPip  = false;
 let recordMimeType = '';
 let recordIntent   = { video: true, notesPlan: true, vtt: true };
-
-// Session-only (wiped after export — never persisted)
-let sessionBgImage = null;
-let sessionBgUrl   = null;
 
 // Hidden capture elements (compositor sources)
 const screenCapture = document.createElement('video');
@@ -112,9 +98,6 @@ const captureCardPip = $('captureCardPip');
 const captureCardSizeSlider = $('captureCardSize');
 const captureCardSizeVal = $('captureCardSizeVal');
 const pipNote = $('pipNote') || $('tabMigrateNote');
-const bgImageRow     = $('bgImageRow');
-const blurAmountRow  = $('blurAmountRow');
-const bgImageInput   = $('bgImageInput');
 
 [screenPreview, webcamPip, captureCardPip].forEach(prepareVideoElement);
 
@@ -166,7 +149,6 @@ function updatePreviewDomVisibility() {
 function startLivePreview() {
   if (!shouldRunLivePreview()) return;
   syncLivePreviewLayout();
-  syncCompositorBackground();
   syncCompositorCapturePip();
   syncCompositorPip();
   composeCanvas.classList.remove('hidden');
@@ -512,117 +494,14 @@ function syncCompositorPip() {
   if (livePreviewActive) updatePreviewDomVisibility();
 }
 
-// ── Webcam background (session-only) ───────────────
-function getBgMode() {
-  return document.querySelector('input[name="bgMode"]:checked')?.value || 'none';
-}
-
-function syncCompositorBackground() {
-  compositor.setWebcamBackground({
-    mode: getBgMode(),
-    bgImage: getBgMode() === 'image' ? sessionBgImage : null,
-    blurPx: parseInt($('blurAmount')?.value || '18', 10),
-  });
-  syncWebcamSegmentation();
-}
-
-function syncWebcamSegmentation() {
-  const mode = getBgMode();
-  const useSeg = webcamToggle.checked && (mode === 'blur' || mode === 'image');
-  setSegmentationOptions({
-    mode: useSeg ? mode : 'none',
-    bgImage: mode === 'image' ? sessionBgImage : null,
-    blurPx: parseInt($('blurAmount')?.value || '14', 10),
-  });
-  const statusEl = $('segStatus');
-  if (useSeg && webcamCapture.srcObject) {
-    if (webcamCapture.videoWidth > 0) {
-      startSegmentationLoop(webcamCapture);
-    } else {
-      waitForVideoFrame(webcamCapture)
-        .then(() => {
-          if (webcamToggle.checked && (getBgMode() === 'blur' || getBgMode() === 'image')) {
-            startSegmentationLoop(webcamCapture);
-          }
-        })
-        .catch(() => {});
-    }
-  } else {
-    stopSegmentationLoop();
-    if (statusEl) statusEl.textContent = '';
-    return;
-  }
-  if (statusEl) {
-    const tick = () => {
-      if (!webcamToggle.checked || (mode !== 'blur' && mode !== 'image')) return;
-      statusEl.textContent = getSegmentationStatus()
-        + (getSegmentationError() ? ` (${getSegmentationError()})` : '');
-      if (!isSegmentationMaskReady()) requestAnimationFrame(tick);
-    };
-    tick();
-  }
-}
-
-document.querySelectorAll('input[name="bgMode"]').forEach(r => {
-  r.addEventListener('change', () => {
-    const mode = getBgMode();
-    bgImageRow?.classList.toggle('hidden', mode !== 'image');
-    blurAmountRow?.classList.toggle('hidden', mode !== 'blur');
-    syncCompositorBackground();
-    refreshLivePreview();
-  });
-});
-
-$('blurAmount')?.addEventListener('input', () => {
-  $('blurAmountVal').textContent = $('blurAmount').value + 'px';
-  syncCompositorBackground();
-});
-
-bgImageInput?.addEventListener('change', async () => {
-  revokeSessionBackground();
-  const file = bgImageInput.files?.[0];
-  if (!file) return;
-  try {
-    const { img, url } = await loadSessionBackground(file);
-    sessionBgImage = img;
-    sessionBgUrl = url;
-    $('bgFileName').textContent = file.name;
-    const prev = $('bgPreview');
-    if (prev) {
-      prev.src = url;
-      prev.classList.remove('hidden');
-    }
-    const imgRadio = document.querySelector('input[name="bgMode"][value="image"]');
-    if (imgRadio) imgRadio.checked = true;
-    bgImageRow?.classList.remove('hidden');
-    blurAmountRow?.classList.add('hidden');
-    syncCompositorBackground();
-    refreshLivePreview();
-  } catch (e) {
-    alert('Could not load background image: ' + e.message);
-  }
-});
-
-function revokeSessionBackground() {
-  if (sessionBgUrl) {
-    URL.revokeObjectURL(sessionBgUrl);
-    sessionBgUrl = null;
-  }
-  sessionBgImage = null;
-}
-
 function wipeSession() {
   resetSession({
-    revokeBg: revokeSessionBackground,
     clearPendingExport: () => {
       pendingExport = null;
     },
     captionCues,
     recordedChunks,
-    fileInputs: [bgImageInput],
   });
-  syncCompositorBackground();
-  disposeSegmenter();
 }
 
 // ── Webcam toggle ──────────────────────────────────
@@ -682,7 +561,6 @@ async function startWebcamPreview() {
     await syncWebcamPresentation();
     applyWebcamSize(parseInt(camSizeSlider.value));
     syncCompositorPip();
-    syncCompositorBackground();
     setStatus('ready', 'Ready');
     refreshLivePreview();
   } catch (e) {
@@ -717,8 +595,7 @@ function syncWebcamSurface() {
   }
 
   webcamPip.srcObject = webcamStream;
-  webcamPip.classList.remove('hidden');
-  webcamPip.classList.toggle('pip-ghost', getBgMode() !== 'none');
+  webcamPip.classList.remove('hidden', 'pip-ghost');
 }
 
 /** Open Document PiP on a fresh user gesture before any await (camera / display picker). */
@@ -862,7 +739,6 @@ function closeWebcamDocumentPiP() {
 
 function stopWebcamPreview() {
   closeDocumentPiP();
-  stopSegmentationLoop();
   stopWebcamTracks();
   webcamPip.srcObject = null;
   webcamCapture.srcObject = null;
@@ -1271,7 +1147,6 @@ async function startRecording() {
     recordedChunks = [];
     recordMimeType = '';
     skipWebcamPip = false;
-    syncCompositorBackground();
     previewContainer?.classList.add('is-recording');
 
     const sourceValue = document.querySelector('input[name="source"]:checked').value;
@@ -1633,7 +1508,6 @@ function cleanup() {
     } else if (webcamToggle.checked && webcamStream) {
       webcamCapture.srcObject = webcamStream;
       playVideo(webcamCapture).then(() => {
-        syncCompositorBackground();
         refreshLivePreview();
       }).catch(() => {});
     }

@@ -1,8 +1,8 @@
-# Rebuild app6-nextaura-fit on IBM Code Engine from GitHub (same app, new code).
+# Rebuild app1-nextaura-fit on IBM Code Engine from GitHub (screen recorder).
 param(
     [string]$CeProject = "nextaura-workflows",
     [string]$CeRegion = "us-south",
-    [string]$AppName = "app6-nextaura-fit",
+    [string]$AppName = "app1-nextaura-fit",
     [string]$Repo = "https://github.com/mlopeznxtaura/opensourceS2DEMO"
 )
 
@@ -21,4 +21,4 @@ ibmcloud ce app update -n $AppName `
 
 $url = (ibmcloud ce app get -n $AppName --output json | ConvertFrom-Json).url
 Write-Host "`nLive: $url" -ForegroundColor Green
-Write-Host "Custom: https://app6.nextaura.fit (via Cloudflare proxy)" -ForegroundColor Green
+Write-Host "Custom: https://app1.nextaura.fit (via Cloudflare proxy)" -ForegroundColor Green

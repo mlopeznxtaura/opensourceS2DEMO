@@ -193,38 +193,6 @@ html, body {
   margin-top: 4px;
 }
 
-.bg-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
-}
-
-.bg-mode-options {
-  display: flex;
-  gap: 6px;
-}
-
-.bg-image-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.file-input {
-  font-size: 11px;
-  color: var(--text2);
-}
-
-.bg-preview {
-  max-width: 100%;
-  max-height: 64px;
-  border-radius: var(--radius);
-  object-fit: cover;
-  border: 1px solid var(--border);
-}
-
 .source-option {
   display: flex;
   flex-direction: column;

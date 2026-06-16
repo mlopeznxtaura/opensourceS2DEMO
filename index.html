@@ -6,7 +6,7 @@
   <title>opensourceS2DEMO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=260611-piponly" />
+  <link rel="stylesheet" href="css/style.css?v=260611-nobg" />
 </head>
 <body>
   <div class="app">
@@ -16,7 +16,7 @@
       <div class="logo">
         <span class="logo-dot"></span>
         <span class="logo-text">opensourceS2DEMO</span>
-        <span class="build-badge" title="Deployed build">build 260611-piponly</span>
+        <span class="build-badge" title="Deployed build">build 260611-nobg</span>
       </div>
       <div class="status-bar">
         <span class="status-indicator" id="statusIndicator"></span>
@@ -157,26 +157,6 @@
               <input type="range" id="camSize" min="200" max="600" value="320" class="size-slider" />
               <span class="size-val" id="camSizeVal">320px</span>
             </div>
-            <div class="bg-section">
-              <span class="position-label">PiP background (this session only)</span>
-              <div class="bg-mode-options">
-                <label class="quality-opt"><input type="radio" name="bgMode" value="none" checked /> None</label>
-                <label class="quality-opt"><input type="radio" name="bgMode" value="blur" /> Blur</label>
-                <label class="quality-opt"><input type="radio" name="bgMode" value="image" /> Image</label>
-              </div>
-              <div class="bg-image-row hidden" id="bgImageRow">
-                <input type="file" id="bgImageInput" accept="image/*" class="file-input" />
-                <span class="size-val" id="bgFileName">No file chosen</span>
-                <img id="bgPreview" class="bg-preview hidden" alt="" />
-              </div>
-              <div class="size-row hidden" id="blurAmountRow">
-                <span class="position-label">Blur strength</span>
-                <input type="range" id="blurAmount" min="6" max="22" value="12" class="size-slider" />
-                <span class="size-val" id="blurAmountVal">12px</span>
-              </div>
-              <p class="caption-note">You stay sharp; only the room behind you is blurred or replaced. Status below shows when AI is tracking.</p>
-              <p class="caption-status" id="segStatus"></p>
-            </div>
           </div>
         </section>
 
@@ -301,10 +281,8 @@
     </div>
   </div>
 
-  <script src="/vendor/tfjs/tf.min.js"></script>
-  <script src="/vendor/body-pix/body-pix.min.umd.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script type="module" src="js/app.js?v=260611-piponly"></script>
+  <script type="module" src="js/app.js?v=260611-nobg"></script>
   <audio id="captureCardMonitor" class="hidden" playsinline></audio>
 </body>
 </html>

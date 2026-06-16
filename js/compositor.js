@@ -1,6 +1,6 @@
 /* Canvas compositor — screen + capture card + webcam PiP + captions */
 
-import { drawWebcamWithBackground } from './webcam-bg.js';
+import { drawWebcamPip } from './webcam-bg.js';
 import { drawCaptionOnCanvas } from './caption-style.js';
 
 export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, canvas }) {
@@ -12,11 +12,6 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
   let captureAsMain = false;
   let captionText = '';
   let webcamOnCanvas = true;
-  let webcamBg = { mode: 'none', bgImage: null, blurPx: 18 };
-
-  function setWebcamBackground(opts) {
-    webcamBg = { ...webcamBg, ...opts };
-  }
 
   function setCaptureAsMain(on) {
     captureAsMain = !!on;
@@ -120,11 +115,7 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
       const y = Math.max(dim / 2, Math.min(vh - dim / 2, cy)) - dim / 2;
 
       ctx.save();
-      drawWebcamWithBackground(ctx, webcamVideo, x, y, dim, {
-        mode: webcamBg.mode,
-        bgImage: webcamBg.bgImage,
-        blurPx: webcamBg.blurPx,
-      });
+      drawWebcamPip(ctx, webcamVideo, x, y, dim);
       ctx.restore();
     }
 
@@ -153,7 +144,6 @@ export function createCompositor({ screenVideo, captureCardVideo, webcamVideo, c
     setPipFromElement,
     setCaption,
     setWebcamOnCanvas,
-    setWebcamBackground,
     setCaptureEnabled,
     setCaptureAsMain,
     getPip: () => ({ webcam: { ...webcamPip }, capture: { ...capturePip } }),
